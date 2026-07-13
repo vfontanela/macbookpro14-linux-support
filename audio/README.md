@@ -19,3 +19,14 @@ sudo bash install.cirrus.driver.sh
 sudo bash dkms.sh
 
 sudo reboot
+
+
+
+Tested on
+MacBookPro14,2
+Kubuntu 26.04
+Linux 7.0.0-27-generic
+Cirrus Logic CS8409
+Credits
+
+Audio driver by davidjo and contributors.
