@@ -2,6 +2,41 @@
 
 Configuration file for enabling full Broadcom BCM43602 functionality on the MacBook Pro 13" 2017 (MacBookPro14,2) under modern Linux distributions.
 
+## Before installing
+
+Edit the file:
+
+```bash
+sudo nano "/usr/lib/firmware/brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt"
+```
+
+Replace
+
+```text
+macaddr=XX:XX:XX:XX:XX:XX
+```
+
+with your wireless interface MAC address.
+
+You can obtain it with:
+
+```bash
+cat /sys/class/net/wlp2s0/address
+```
+
+or
+
+```bash
+ip link show wlp2s0
+```
+
+Then rebuild the initramfs:
+
+```bash
+sudo update-initramfs -u
+sudo reboot
+```
+
 ## Problem
 
 After a fresh installation of Ubuntu, Kubuntu or other Linux distributions, the Broadcom BCM43602 driver (`brcmfmac`) usually loads successfully, but without a board-specific NVRAM configuration.
@@ -36,7 +71,40 @@ When placed in:
 ```
 
 the `brcmfmac` driver automatically loads the proper board parameters during boot.
+## Before installing
 
+Edit the file:
+
+```bash
+sudo nano "/usr/lib/firmware/brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt"
+```
+
+Replace
+
+```text
+macaddr=XX:XX:XX:XX:XX:XX
+```
+
+with your wireless interface MAC address.
+
+You can obtain it with:
+
+```bash
+cat /sys/class/net/wlp2s0/address
+```
+
+or
+
+```bash
+ip link show wlp2s0
+```
+
+Then rebuild the initramfs:
+
+```bash
+sudo update-initramfs -u
+sudo reboot
+```
 ## Installation
 
 Copy the file:
