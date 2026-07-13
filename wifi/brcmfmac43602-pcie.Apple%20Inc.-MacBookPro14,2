@@ -1,0 +1,20 @@
+# Broadcom BCM43602 board configuration
+# MacBookPro14,2 (2017)
+#
+# If adapting this file from another machine,
+# do not include a machine-specific macaddr= entry.
+
+boardrev=0x1421
+boardtype=0x0727
+boardflags=0x10401001
+boardflags2=0x00802000
+muxenab=0x10
+antswitch=0
+aa2g=1
+aa5g=1
+ag0=255
+ag1=255
+aga0=255
+aga1=255
+xtalfreq=37400
+nocrc=1
