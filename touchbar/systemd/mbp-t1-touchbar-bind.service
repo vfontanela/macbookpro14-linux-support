@@ -1,0 +1,12 @@
+[Unit]
+Description=Rebind Apple iBridge (T1) so the MacBook Pro Touch Bar activates
+After=multi-user.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/mbp-t1-touchbar/bind-touchbar.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

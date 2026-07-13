@@ -1,0 +1,4 @@
+# mbp-t1-touchbar-dkms: re-run the rebind whenever the Apple iBridge (T1)
+# (re)appears on the USB bus - this covers resume from suspend, where the
+# iBridge typically re-enumerates and needs to be rebound again.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="05ac", ATTR{idProduct}=="8600", TAG+="systemd", ENV{SYSTEMD_WANTS}+="mbp-t1-touchbar-bind.service"
