@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    purge)
+        rm -rf /usr/src/mbp-t1-touchbar-0.3
+        rm -f /etc/modprobe.d/mbp-t1-touchbar.conf
+        rm -f /etc/modules-load.d/mbp-t1-touchbar.conf
+        rm -f /etc/udev/rules.d/99-mbp-t1-touchbar.rules
+        udevadm control --reload-rules 2>/dev/null || true
+        systemctl daemon-reload 2>/dev/null || true
+    ;;
+esac
+
+exit 0

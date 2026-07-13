@@ -1,0 +1,53 @@
+#!/bin/bash
+set -e
+
+NAME=mbp-t1-touchbar
+VERS=0.3
+
+case "$1" in
+    configure)
+        # (re)register the source with dkms, dropping any stale registration
+        if dkms status -m "$NAME" -v "$VERS" 2>/dev/null | grep -q "$VERS"; then
+            dkms remove -m "$NAME" -v "$VERS" --all >/dev/null 2>&1 || true
+        fi
+        dkms add -m "$NAME" -v "$VERS"
+
+        KVER="$(uname -r)"
+        if [ -d "/lib/modules/$KVER/build" ]; then
+            echo "mbp-t1-touchbar-dkms: building kernel module for $KVER..."
+            if dkms build -m "$NAME" -v "$VERS" -k "$KVER" && \
+               dkms install -m "$NAME" -v "$VERS" -k "$KVER" --force; then
+                echo "mbp-t1-touchbar-dkms: module built and installed for $KVER."
+            else
+                echo "mbp-t1-touchbar-dkms: WARNING - build/install failed for $KVER."
+                echo "  See /var/lib/dkms/$NAME/$VERS/build/make.log for details."
+            fi
+        else
+            cat <<EOF
+mbp-t1-touchbar-dkms: WARNING - no kernel headers found for $KVER
+  (/lib/modules/$KVER/build is missing).
+  Install the matching linux-headers package, then run:
+    sudo dkms install -m $NAME -v $VERS -k $KVER
+EOF
+        fi
+
+        depmod -a "$KVER" 2>/dev/null || depmod -a || true
+
+        systemctl daemon-reload 2>/dev/null || true
+        systemctl enable mbp-t1-touchbar-bind.service 2>/dev/null || true
+        systemctl restart mbp-t1-touchbar-bind.service 2>/dev/null || true
+
+        udevadm control --reload-rules 2>/dev/null || true
+        udevadm trigger 2>/dev/null || true
+
+        cat <<EOF
+
+mbp-t1-touchbar-dkms installed.
+Check with:  lsusb -t | grep 05ac:8600
+Logs with:   journalctl -u mbp-t1-touchbar-bind.service
+If the Touch Bar stays blank after a first boot, try rebooting once more.
+EOF
+    ;;
+esac
+
+exit 0

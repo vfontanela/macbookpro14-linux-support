@@ -1,0 +1,29 @@
+Package: mbp-t1-touchbar-dkms
+Version: 1.0-2
+Section: kernel
+Priority: optional
+Architecture: all
+Depends: dkms (>= 2.2.0.3), kmod, usbutils, systemd, udev
+Recommends: linux-headers-generic | linux-headers-amd64
+Maintainer: Vinicius Fontanela <[email protected]>
+Description: T1 iBridge / Touch Bar driver (DKMS) for MacBook Pro 2016/2017
+ Out-of-tree DKMS package providing the apple-ibridge, apple-ib-tb and
+ apple-ib-als kernel modules needed to activate the Touch Bar, ambient
+ light sensor and iBridge USB hub on Intel MacBook Pro models with the
+ T1 co-processor (MacBookPro13,2 / 13,3 / 14,2 / 14,3 - late 2016 and
+ mid 2017, both 13" and 15").
+ .
+ This is NOT for T2-equipped MacBooks (2018+), which are increasingly
+ covered by in-tree drivers (hid-appletb-kbd, hid-appletb-bl,
+ appletbdrm) since Linux 6.15-6.17. T1 support remains out-of-tree.
+ .
+ Source: import of Ronald Tschalar's original T1 driver, updated for
+ modern kernels by parport0 (github.com/parport0/mbp-t1-touchbar-driver).
+ This package adds DKMS packaging plus a systemd service and udev rule
+ that automate the USB unbind/reprobe dance the driver needs to bind
+ correctly (including after resume from suspend).
+ .
+ Because this ships as DKMS source, the kernel module is actually
+ compiled on your machine against your running kernel's headers when
+ the package is installed - make sure linux-headers for your kernel
+ are installed first.

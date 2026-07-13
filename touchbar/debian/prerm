@@ -1,0 +1,14 @@
+#!/bin/bash
+set -e
+
+NAME=mbp-t1-touchbar
+VERS=0.3
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        systemctl disable --now mbp-t1-touchbar-bind.service >/dev/null 2>&1 || true
+        dkms remove -m "$NAME" -v "$VERS" --all >/dev/null 2>&1 || true
+    ;;
+esac
+
+exit 0
