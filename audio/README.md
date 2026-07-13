@@ -21,8 +21,7 @@ sudo bash dkms.sh
 sudo reboot
 
 
-
-#Tested on
+## Tested on
 MacBookPro14,2
 Kubuntu 26.04
 Linux 7.0.0-27-generic
