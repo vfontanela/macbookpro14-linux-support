@@ -1,0 +1,19 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: mbp-t1-touchbar-driver
+Source: https://github.com/parport0/mbp-t1-touchbar-driver
+Original-Author: Ronald Tschalar <[email protected]>
+ (posted upstream: https://lore.kernel.org/lkml/20190612083400.1015-1-ronald@innovation.ch/)
+
+Files: *
+Copyright: 2018 Ronald Tschalar
+License: GPL-2.0
+
+License: GPL-2.0
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License version 2 as
+ published by the Free Software Foundation.
+ .
+ On Debian systems, the complete text of the GNU General Public
+ License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+Full GPL-2.0 license text: https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
