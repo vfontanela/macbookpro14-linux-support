@@ -1,0 +1,37 @@
+Package: mbp-cirrus-audio-dkms
+Version: 1.0-1
+Section: kernel
+Priority: optional
+Architecture: all
+Depends: dkms (>= 2.2.0.3), build-essential, patch, wget
+Recommends: linux-headers-generic | linux-headers-amd64
+Maintainer: Vinicius Fontanela <[email protected]>
+Description: Cirrus CS8409 HDA audio driver (DKMS) for T2-era MacBook Pro/iMac
+ Out-of-tree DKMS package providing the snd-hda-codec-cs8409 kernel
+ module needed for internal speaker/microphone audio on Macs with the
+ Cirrus Logic CS8409 HDA codec + MAX98706/SSM3515 amplifiers (most
+ 2017+ MacBook Pro and iMac Pro models with a T2 chip).
+ .
+ This is a repackaging, as DKMS source, of davidjo/snd_hda_macbookpro
+ (github.com/davidjo/snd_hda_macbookpro), with the dkms.conf fix from
+ that project's issue #164 (CFLAGS_MODULE overrides needed to build
+ cleanly on GCC 14+ / kernel 6.17+, which also covers kernel 7.x).
+ .
+ IMPORTANT: at build time (both at install and at every future kernel
+ update) this driver's PRE_BUILD step downloads the sound/hda subtree
+ of a kernel source tree matching your *exact* running kernel version -
+ either via the distro's linux-source-<version> package (Ubuntu/
+ Debian) or from kernel.org directly. This requires:
+   - internet access at the time DKMS (re)builds the module
+   - a linux-source-<version> package that actually matches your
+     running kernel (does NOT work with Ubuntu HWE kernels - see
+     docs/TROUBLESHOOTING.md in the source repo)
+ If either of those isn't satisfied, the (re)build will fail and audio
+ will stay broken until you install the matching linux-source package
+ and re-run dkms manually - see the package's docs for exact commands.
+ .
+ To reduce this, the bundled install script caches the patched kernel
+ source tree per kernel version under /var/cache/mbp-cirrus-audio-dkms/,
+ so routine Ubuntu kernel ABI bumps (which share the same underlying
+ kernel version) rebuild fully offline. Only a genuine new upstream
+ kernel version still needs a fresh download.

@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+NAME=snd_hda_macbookpro
+VERS=1.0
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        dkms remove -m "$NAME" -v "$VERS" --all >/dev/null 2>&1 || true
+    ;;
+esac
+
+exit 0

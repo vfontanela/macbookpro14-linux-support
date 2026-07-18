@@ -1,0 +1,10 @@
+#!/bin/bash
+set -e
+
+case "$1" in
+    purge)
+        rm -rf /usr/src/snd_hda_macbookpro-1.0
+    ;;
+esac
+
+exit 0

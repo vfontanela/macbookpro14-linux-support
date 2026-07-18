@@ -1,0 +1,71 @@
+#!/bin/bash
+set -e
+
+NAME=snd_hda_macbookpro
+VERS=1.0
+
+case "$1" in
+    configure)
+        KVER="$(uname -r)"
+        KVER_BASE="$(echo "$KVER" | cut -d '-' -f1)"
+
+        # (re)register the source with dkms, dropping any stale registration
+        if dkms status -m "$NAME" -v "$VERS" 2>/dev/null | grep -q "$VERS"; then
+            dkms remove -m "$NAME" -v "$VERS" --all >/dev/null 2>&1 || true
+        fi
+        dkms add -m "$NAME" -v "$VERS"
+
+        if [ ! -d "/lib/modules/$KVER/build" ]; then
+            cat <<EOF
+mbp-cirrus-audio-dkms: WARNING - no kernel headers found for $KVER
+  (/lib/modules/$KVER/build is missing).
+  Install linux-headers-$KVER (or linux-headers-generic), then run:
+    sudo dkms install -m $NAME -v $VERS -k $KVER
+EOF
+            exit 0
+        fi
+
+        # This driver's PRE_BUILD step (install.cirrus.driver.sh) needs a
+        # kernel source tree matching $KVER_BASE. On Ubuntu/Debian it looks
+        # for /usr/src/linux-source-$KVER_BASE.tar.bz2. Warn up front rather
+        # than let the build fail deep inside PRE_BUILD with a confusing error.
+        if [ -f /etc/os-release ] && grep -qiE '^(ID|ID_LIKE)=.*ubuntu|^NAME=.*Ubuntu' /etc/os-release; then
+            if [ ! -f "/usr/src/linux-source-${KVER_BASE}.tar.bz2" ]; then
+                cat <<EOF
+mbp-cirrus-audio-dkms: WARNING - matching kernel source not found:
+  /usr/src/linux-source-${KVER_BASE}.tar.bz2
+
+This driver needs to compile against the sound/hda subsystem source of
+YOUR exact kernel version ($KVER_BASE), not just the headers. Install it
+with:
+  sudo apt install linux-source-${KVER_BASE}
+
+If that package doesn't exist for your kernel (common with HWE/custom
+kernels), see the TROUBLESHOOTING doc that shipped in this package's
+source repo for the manual kernel.org fallback.
+
+Attempting the build anyway - it will likely fail until the above is
+resolved; re-run afterwards with:
+  sudo dkms install -m $NAME -v $VERS -k $KVER --force
+EOF
+            fi
+        fi
+
+        echo "mbp-cirrus-audio-dkms: building kernel module for $KVER (this downloads/extracts a matching kernel source tree - may take a while)..."
+        if dkms build -m "$NAME" -v "$VERS" -k "$KVER" && \
+           dkms install -m "$NAME" -v "$VERS" -k "$KVER" --force; then
+            echo "mbp-cirrus-audio-dkms: module built and installed for $KVER."
+            depmod -a "$KVER" 2>/dev/null || depmod -a || true
+            echo "Reboot, then check with: lsmod | grep cs8409"
+        else
+            cat <<EOF
+mbp-cirrus-audio-dkms: WARNING - build/install failed for $KVER.
+  See /var/lib/dkms/$NAME/$VERS/build/make.log for the actual error.
+  Common causes: missing/mismatched linux-source package (see above),
+  no internet access at build time, or an unsupported kernel branch.
+EOF
+        fi
+    ;;
+esac
+
+exit 0
