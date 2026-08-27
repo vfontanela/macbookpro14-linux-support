@@ -1,126 +1,94 @@
-[README.md](https://github.com/user-attachments/files/29968915/README.md)
 # mbp-t1-touchbar-dkms
 
-DKMS package that activates the Touch Bar (and ambient light sensor) on
-Intel MacBook Pro models with the **T1** co-processor, running Linux.
+DKMS package that activates the Touch Bar and ambient light sensor on Intel
+MacBook Pro models with the **T1** co-processor.
 
-Tested on: MacBook Pro 2017 (MacBookPro14,3), kernel 7.0 (Ubuntu-based).
-Should also work on MacBookPro13,2 / 13,3 / 14,2 (late 2016 / mid 2017,
-13" and 15" Touch Bar models) — these all share the same T1 iBridge.
+Validated on:
 
-> **This is for T1, not T2.** If your Mac is 2018 or newer, it has a T2
-> chip instead, which is a different device with increasing native
-> kernel support since Linux 6.15 (`hid-appletb-kbd`, `hid-appletb-bl`,
-> `appletbdrm`). Don't use this package on a T2 machine — see
-> [`docs/T1_VS_T2.md`](docs/T1_VS_T2.md) for details.
+| Model | Distribution | Kernel | Result |
+|---|---|---|---|
+| MacBookPro14,2 | Fedora 44 | 7.1.10 | Touch Bar working through DKMS |
+| MacBookPro14,3 | Ubuntu-based | 7.0 | Working |
 
-## What this actually is
+MacBookPro13,2 / 13,3 / 14,2 / 14,3 share the same T1 iBridge and should use
+this driver. This is for T1 Macs, not T2 Macs.
 
-Three kernel modules doing the low-level work:
+## Fedora 44
 
-| Module | Purpose |
-|---|---|
-| `apple-ibridge` | Talks to the iBridge, Apple's virtual USB hub that exposes the Touch Bar, ALS, and other T1 peripherals as HID devices |
-| `apple-ib-tb` | Touch Bar driver: renders the on-screen keys, handles touch/tap input, exposes brightness/idle sysfs controls |
-| `apple-ib-als` | Ambient light sensor (IIO subsystem) |
+Install the build requirements for the running kernel:
 
-These are **not upstream** — there is no in-tree Linux driver for the T1
-Touch Bar. The source here is an updated fork, by
-[parport0](https://github.com/parport0/mbp-t1-touchbar-driver), of the
-original out-of-tree driver written by Ronald Tschalär.
+```bash
+sudo dnf install git dkms gcc make kernel-devel-$(uname -r) kernel-headers
+```
 
-What this repo adds on top of the raw driver source:
+Clone this repository and build the RPM that registers the driver with DKMS:
 
-- **DKMS packaging** — the module is compiled against *your* running
-  kernel's headers when you install the package, and automatically
-  rebuilt on every kernel update. No need to manually `make` after
-  every `apt upgrade`.
-- **Automatic USB rebind** — `apple-ibridge` only registers a HID
-  driver, not a full `usb_driver`, so the generic `usb` driver often
-  claims the device first and the Touch Bar stays blank even with the
-  modules loaded. A helper script + systemd service + udev rule handle
-  the unbind/reprobe dance automatically, including after resume from
-  suspend (the iBridge re-enumerates on the USB bus at that point).
-- A `.deb` you can just `dpkg -i`.
+```bash
+git clone https://github.com/vfontanela/macbookpro14-linux-support.git
+cd macbookpro14-linux-support/touchbar
+sudo dnf install rpm-build
+rpmbuild -ba rpm/mbp-t1-touchbar-dkms.spec
+sudo dnf install ~/rpmbuild/RPMS/noarch/mbp-t1-touchbar-dkms-*.noarch.rpm
+sudo reboot
+```
 
-## Requirements
+If the RPM is already available from a release or a previous build, install it
+directly with `sudo dnf install ./mbp-t1-touchbar-dkms-*.noarch.rpm`.
 
-- `dkms` and the `linux-headers` package matching your **running**
-  kernel (`uname -r`).
-- Your T1 must not be in recovery mode. Check with `lsusb`:
-  - `05ac:8600 Apple, Inc. iBridge` → good, firmware is intact.
-  - `05ac:1281 Apple Mobile Device [Recovery Mode]` → the T1's
-    firmware is missing; boot macOS once to let it restore itself,
-    then reboot into Linux.
+Verify after reboot:
 
-## Install
+```bash
+dkms status
+lsmod | grep -E 'apple_ibridge|apple_ib_tb|apple_ib_als'
+journalctl -u mbp-t1-touchbar-bind.service --no-pager
+```
+
+The package also installs the USB rebind service and udev rule required when
+the generic USB driver claims the iBridge before `apple-ibridge`.
+
+## Ubuntu and Kubuntu
 
 ```bash
 sudo apt install linux-headers-$(uname -r) dkms
 sudo dpkg -i mbp-t1-touchbar-dkms_<version>_all.deb
-sudo apt -f install   # only if dpkg reports missing deps
+sudo apt -f install   # only if dpkg reports missing dependencies
+sudo reboot
 ```
 
-The post-install script registers the source with DKMS, builds and
-installs the module for your current kernel, enables the rebind
-service, and reloads udev rules.
+## Requirements and troubleshooting
 
-## Verify
+Confirm that the T1 firmware is present:
 
 ```bash
-dkms status
-lsusb -t | grep 05ac:8600
-journalctl -u mbp-t1-touchbar-bind.service --no-pager
+lsusb
 ```
 
-If the Touch Bar is still blank after all of that, a reboot usually
-finishes the job on first install.
+- `05ac:8600 Apple, Inc. iBridge`: firmware is intact.
+- `05ac:1281 Apple Mobile Device [Recovery Mode]`: boot macOS once so it
+  can restore the T1 firmware, then return to Linux.
+
+If the modules are loaded but the Touch Bar remains blank, check the rebind
+service and reboot once after the initial installation.
 
 ## Configuration
 
-Edit `/etc/modprobe.d/mbp-t1-touchbar.conf` to change Touch Bar
-behavior (Fn-key mode, idle/dim timeouts), then reload the module:
+Edit `/etc/modprobe.d/mbp-t1-touchbar.conf` to change Fn-key mode,
+brightness and idle/dim timeouts. Reload the module after changing it:
 
 ```bash
-sudo modprobe -r apple-ib-tb && sudo modprobe apple-ib-tb
+sudo modprobe -r apple-ib-tb
+sudo modprobe apple-ib-tb
 ```
 
-## Building from source
+## Components
 
-```bash
-git clone <this-repo>
-cd mbp-t1-touchbar-dkms
-./build.sh            # -> mbp-t1-touchbar-dkms_1.0-2_all.deb
-```
+| Module | Purpose |
+|---|---|
+| `apple-ibridge` | Connects to Apple's T1 iBridge virtual USB hub |
+| `apple-ib-tb` | Renders the Touch Bar and handles touch input |
+| `apple-ib-als` | Exposes the ambient light sensor through IIO |
 
-## Repo layout
-
-```
-src/            kernel module source (apple-ibridge, apple-ib-tb, apple-ib-als) + dkms.conf
-scripts/        bind-touchbar.sh - USB unbind/reprobe helper
-systemd/        mbp-t1-touchbar-bind.service
-udev/           99-mbp-t1-touchbar.rules
-modprobe.d/     default module options
-modules-load.d/ boot-time module load order
-debian/         control, postinst, prerm, postrm, conffiles
-docs/           troubleshooting, T1 vs T2 background, changelog
-build.sh        assembles pkgroot and builds the .deb
-```
-
-## Uninstall
-
-```bash
-sudo apt remove mbp-t1-touchbar-dkms      # keep config files
-sudo apt purge mbp-t1-touchbar-dkms       # also remove them
-```
-
-## Credits / license
-
-- Original T1 Touch Bar driver: Ronald Tschalär.
-- Updated fork used as source: [parport0/mbp-t1-touchbar-driver](https://github.com/parport0/mbp-t1-touchbar-driver).
-- DKMS packaging, systemd/udev automation: this repo.
-- License: GPL-2.0 (see `LICENSE-NOTES.txt`).
-
-See [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for common
-build/runtime issues, and [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
-for package history.
+The driver is out of tree and based on
+[parport0/mbp-t1-touchbar-driver](https://github.com/parport0/mbp-t1-touchbar-driver),
+originally written by Ronald Tschalär. See
+[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for additional diagnostics.
