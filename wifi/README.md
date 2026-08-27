@@ -1,151 +1,120 @@
-# BCM43602 Wi-Fi Fix for MacBookPro14,2 (2017)
+# BCM43602 Wi-Fi on MacBookPro14,2
 
-Configuration file for enabling full Broadcom BCM43602 functionality on the MacBook Pro 13" 2017 (MacBookPro14,2) under modern Linux distributions.
+Board-specific Broadcom BCM43602 NVRAM guidance for the 13-inch 2017 Touch Bar
+MacBook Pro.
 
-## Before installing
+Validated on:
 
-Edit the file:
+| Model | Distribution | Device | Result |
+|---|---|---|---|
+| MacBookPro14,2 | Fedora 44 | BCM43602, PCI ID `14e4:43ba` | 2.4 GHz and 5 GHz working |
+| MacBookPro14,2 | Ubuntu / Kubuntu | BCM43602 | Existing installation remains supported |
 
-```bash
-sudo nano "/usr/lib/firmware/brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt"
-```
+## Why the complete NVRAM is required
 
-Replace
+On Fedora 44, a minimal NVRAM file was not sufficient. The working result used
+the complete, calibrated board NVRAM, including these required values:
 
 ```text
-macaddr=XX:XX:XX:XX:XX:XX
+devid=0x43ba
+ccode=00
+regrev=245
+aa2g=7
+aa5g=7
+txchain=7
+rxchain=7
 ```
 
-with your wireless interface MAC address.
+These lines are only the identifying values. Keep all other antenna, power,
+spur, FEM, PA and calibration parameters from the complete MacBookPro14,2
+NVRAM. Do not replace the full board data with the short block above.
 
-You can obtain it with:
+## Use the permanent MAC address
+
+The `macaddr` entry must contain the interface's **permanent hardware
+address**:
 
 ```bash
-cat /sys/class/net/wlp2s0/address
+sudo ethtool -P wlp2s0
 ```
 
-or
+Use the address printed after `Permanent address:` in the complete NVRAM:
+
+```text
+macaddr=<permanent-address-reported-by-ethtool>
+```
+
+Do **not** use `cat /sys/class/net/wlp2s0/address` as the source. That value
+can be randomized by NetworkManager and can change between connections. The
+repository intentionally does not publish the MAC address of a specific
+machine as a reusable example.
+
+If the wireless interface has a different name, replace `wlp2s0` in the
+commands.
+
+## Install on Fedora
+
+Install `ethtool` if necessary:
 
 ```bash
-ip link show wlp2s0
+sudo dnf install ethtool iw
 ```
 
-Then rebuild the initramfs:
+Create the firmware directory and install the completed NVRAM using the exact
+board-specific filename:
+
+```bash
+sudo install -d /usr/lib/firmware/brcm
+sudo install -m 0644 brcmfmac43602-pcie.Apple\ Inc.-MacBookPro14,2.txt   "/usr/lib/firmware/brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt"
+sudo reboot
+```
+
+If the firmware lookup on a particular kernel requests the generic name, also
+install the same complete file as a fallback:
+
+```bash
+sudo cp   "/usr/lib/firmware/brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt"   /usr/lib/firmware/brcm/brcmfmac43602-pcie.txt
+sudo reboot
+```
+
+No `dracut --install` or `install_items` step is required by this
+working Fedora procedure.
+
+## Install on Ubuntu or Kubuntu
+
+Use the same complete NVRAM and permanent-MAC rule, then copy it to the same
+board-specific path under `/usr/lib/firmware/brcm`. Existing systems that
+include firmware in the initramfs may then run:
 
 ```bash
 sudo update-initramfs -u
 sudo reboot
 ```
 
-## Problem
+## Verify both bands
 
-After a fresh installation of Ubuntu, Kubuntu or other Linux distributions, the Broadcom BCM43602 driver (`brcmfmac`) usually loads successfully, but without a board-specific NVRAM configuration.
-
-Typical kernel messages include:
-
-```
-Direct firmware load for brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.bin failed
-Direct firmware load for brcm/brcmfmac43602-pcie.clm_blob failed
-```
-
-As a result, the wireless interface may exhibit:
-
-- inability to discover 5 GHz networks
-- unstable signal
-- poor roaming
-- reduced transmit power
-- intermittent connection failures
-
-## Solution
-
-This repository provides the missing board-specific NVRAM configuration file:
-
-```
-brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt
-```
-
-When placed in:
-
-```
-/usr/lib/firmware/brcm/
-```
-
-the `brcmfmac` driver automatically loads the proper board parameters during boot.
-## Before installing
-
-Edit the file:
+Confirm that the PHY exposes Band 2, which contains the 5 GHz channels:
 
 ```bash
-sudo nano "/usr/lib/firmware/brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt"
+iw phy phy0 channels
 ```
 
-Replace
-
-```text
-macaddr=XX:XX:XX:XX:XX:XX
-```
-
-with your wireless interface MAC address.
-
-You can obtain it with:
+Then inspect the networks, frequencies and channels reported by
+NetworkManager:
 
 ```bash
-cat /sys/class/net/wlp2s0/address
+nmcli -f IN-USE,SSID,FREQ,CHAN,RATE,SIGNAL dev wifi list
 ```
 
-or
+A successful result shows 2.4 GHz networks around 2412-2484 MHz and 5 GHz
+networks above 5000 MHz.
+
+For diagnostics:
 
 ```bash
-ip link show wlp2s0
+sudo dmesg | grep -i brcmfmac
 ```
 
-Then rebuild the initramfs:
-
-```bash
-sudo update-initramfs -u
-sudo reboot
-```
-## Installation
-
-Copy the file:
-
-```bash
-sudo cp brcmfmac43602-pcie.Apple\ Inc.-MacBookPro14,2.txt \
-/usr/lib/firmware/brcm/
-```
-
-Then rebuild the initramfs:
-
-```bash
-sudo update-initramfs -u
-```
-
-Reboot.
-
-## Verification
-
-After reboot:
-
-```bash
-sudo dmesg | grep brcmfmac
-```
-
-The firmware should initialize normally.
-
-You should also be able to detect and connect to 5 GHz networks.
-
-## Tested on
-
-- MacBook Pro 13" 2017 Touch Bar
-- Model: MacBookPro14,2
-- Broadcom BCM43602 (PCI ID 14e4:43ba)
-- Kubuntu 26.04 LTS
-- Linux kernel 7.0.x
-
-## Credits
-
-The configuration values originate from community work around the Broadcom BCM43602 firmware. This repository simply packages and documents the configuration for modern Linux installations on the MacBookPro14,2.
-
-## License
-
-The configuration file contains board parameters intended for Broadcom firmware and is redistributed for compatibility purposes.
+A warning that a `clm_blob` was not found is not, by itself, the cause of
+missing 5 GHz support: 5 GHz was validated with the complete calibrated NVRAM
+and without a CLM blob.
