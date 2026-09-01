@@ -1,4 +1,15 @@
-# BCM43602 Wi-Fi on MacBookPro14,2
+# Broadcom Wi-Fi on MacBookPro14,1 and MacBookPro14,2
+
+The two 2017 13-inch models use different Broadcom devices and require different fixes:
+
+| Model | Device | Required support |
+|---|---|---|
+| MacBookPro14,1 | BCM4350, PCI ID `14e4:43a3` | `brcmfmac-bcm4350-dfs/1.0` DKMS for DFS UNII-2e; see [BCM4350-DFS.md](BCM4350-DFS.md) |
+| MacBookPro14,2 | BCM43602, PCI ID `14e4:43ba` | Complete calibrated MacBookPro14,2 board NVRAM, documented below |
+
+Do not interchange NVRAM, firmware or regulatory blobs between chipsets.
+
+## BCM43602 on MacBookPro14,2
 
 Board-specific Broadcom BCM43602 NVRAM guidance for the 13-inch 2017 Touch Bar
 MacBook Pro.
