@@ -3,6 +3,8 @@
 DKMS package that activates the Touch Bar and ambient light sensor on Intel
 MacBook Pro models with the **T1** co-processor.
 
+MacBookPro14,1 has a physical function-key row and no Touch Bar, so this package is not applicable to that model. MacBookPro14,2 is the supported 13-inch 2017 Touch Bar model.
+
 Validated on:
 
 | Model | Distribution | Kernel | Result |
