@@ -8,6 +8,7 @@ Validated on:
 
 | Model | Distribution | Kernel | Result |
 |---|---|---|---|
+| MacBookPro14,1 | Fedora 44 | 7.1.12 | Internal speakers and microphone working with the same driver |
 | MacBookPro14,2 | Fedora 44 | 7.1.10 | Internal speakers and microphone working |
 | 2017+ MacBook Pro / iMac Pro | Ubuntu-based | 7.x | Supported by the packaged DKMS workflow |
 
@@ -105,6 +106,6 @@ require a new kernel-source download.
 
 - DKMS automates rebuilding; it does not remove the requirement for matching
   kernel development files and sound/HDA source.
-- The Fedora 44 result above was validated on MacBookPro14,2 with kernel
-  7.1.10.
+- Fedora 44 was validated on MacBookPro14,1 with kernel 7.1.12 and on
+  MacBookPro14,2 with kernel 7.1.10. Both use the same driver workflow.
 - Driver and codec patches are maintained by davidjo and contributors.
