@@ -11,14 +11,15 @@ Do not interchange NVRAM, firmware or regulatory blobs between chipsets.
 
 ## BCM4350 kernel compatibility
 
-The `brcmfmac-bcm4350-dfs/1.0` package based on `v7.1.12` needs a callback signature adaptation for the reported Fedora `7.2.4-200.fc44.x86_64` build failure. See the [kernel 7.2 correction and rebuild procedure](BCM4350-DFS.md#kernel-72-compatibility-update-2026-09-10) before upgrading an installation that uses this DKMS module. The correction was reported applied locally; post-fix runtime validation is still to be recorded.
+The corrected `brcmfmac-bcm4350-dfs/1.0` source package is [published here](https://github.com/vfontanela/macbookpro14-linux-support/releases/tag/bcm4350-dfs-1.0-kernel7.2.4-r1). The supplied build log records **exit code 0** for `7.2.4-200.fc44.x86_64`; post-reboot records show that kernel running and Wi-Fi connected at **5580 MHz / DFS channel 116**. See [sources](brcmfmac-bcm4350-dfs-1.0/), [build and validation evidence](bcm4350-evidence/kernel-7.2.4/), and the [kernel 7.2 correction and rebuild procedure](BCM4350-DFS.md#kernel-72-compatibility-update-2026-09-10).
+
+The original documentation reported a `v7.1.12` source base, but the package records no verifiable upstream commit. The `KERNEL_VERSION(7, 2, 0)` cutoff is empirical. `modinfo` shows the resolved file, not proof of the exact loaded binary; matching `vermagic` does not guarantee full compatibility. Other kernels need their own build and runtime validation.
 
 ### BCM4350 maintenance changelog
 
-- **2026-09-10:** Documented the `remain_on_channel` / `rx_addr` compatibility correction, explicit target-kernel rebuild commands, and evidence for 7.1.12, 7.1.13 and 7.2.4. DKMS package version remains `1.0`; this is a documentation update, with no new driver release.
+- **2026-09-10:** Published the corrected source tree with Makefile, DKMS configuration, shared/vendor headers and preserved license notices; attached the source archive, callback patch, successful build log, summary, validation and SHA-256 checksums. Release tag `bcm4350-dfs-1.0-kernel7.2.4-r1` identifies this publication; DKMS `PACKAGE_VERSION="1.0"` remains unchanged. The archive already includes the fix.
+- **2026-09-10 (earlier):** Documented the `remain_on_channel` / `rx_addr` correction and explicit target-kernel rebuild procedure. The later publication above supplies the previously pending validation.
 - **2026-09-01:** Published the BCM4350 DFS root cause, ISO3166 country-code fallback patch, DKMS packaging, installation, verification and rollback guide.
-
-
 
 ## BCM43602 on MacBookPro14,2
 
