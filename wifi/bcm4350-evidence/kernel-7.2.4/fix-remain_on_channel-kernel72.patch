@@ -1,0 +1,48 @@
+--- a/p2p.h
++++ b/p2p.h
+@@ -155,9 +155,18 @@
+ int brcmf_p2p_scan_prep(struct wiphy *wiphy,
+ 			struct cfg80211_scan_request *request,
+ 			struct brcmf_cfg80211_vif *vif);
++#include <linux/version.h>
++
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++int brcmf_p2p_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
++				struct ieee80211_channel *channel,
++				unsigned int duration, u64 *cookie,
++				const u8 *rx_addr);
++#else
+ int brcmf_p2p_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 				struct ieee80211_channel *channel,
+ 				unsigned int duration, u64 *cookie);
++#endif
+ int brcmf_p2p_notify_listen_complete(struct brcmf_if *ifp,
+ 				     const struct brcmf_event_msg *e,
+ 				     void *data);
+--- a/p2p.c
++++ b/p2p.c
+@@ -971,14 +971,24 @@
+  * @duration: time in ms to remain on channel.
+  * @cookie: cookie.
+  */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++int brcmf_p2p_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
++				struct ieee80211_channel *channel,
++				unsigned int duration, u64 *cookie,
++				const u8 *rx_addr)
++#else
+ int brcmf_p2p_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
+ 				struct ieee80211_channel *channel,
+ 				unsigned int duration, u64 *cookie)
++#endif
+ {
+ 	struct brcmf_cfg80211_info *cfg = wiphy_to_cfg(wiphy);
+ 	struct brcmf_p2p_info *p2p = &cfg->p2p;
+ 	s32 err;
+ 	u16 channel_nr;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++	(void)rx_addr;
++#endif
+ 
+ 	channel_nr = ieee80211_frequency_to_channel(channel->center_freq);
+ 	brcmf_dbg(TRACE, "Enter, channel: %d, duration ms (%d)\n", channel_nr,

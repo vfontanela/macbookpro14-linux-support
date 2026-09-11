@@ -1,0 +1,53 @@
+DKMS (dkms-3.4.3) make.log for brcmfmac-bcm4350-dfs/1.0 for kernel 7.2.4-200.fc44.x86_64 (x86_64)
+qui 10 set 2026 21:04:09 -03
+
+Building module(s)
+# command: make -j4 KERNELRELEASE=7.2.4-200.fc44.x86_64 -C /lib/modules/7.2.4-200.fc44.x86_64/build M=/var/lib/dkms/brcmfmac-bcm4350-dfs/1.0/build modules KDIR=/lib/modules/7.2.4-200.fc44.x86_64/build
+make: Entrando no diretório '/usr/src/kernels/7.2.4-200.fc44.x86_64'
+
+make[1]: Entrando no diretório '/var/lib/dkms/brcmfmac-bcm4350-dfs/1.0/build'
+
+warning: pahole version differs from the one used to build the kernel
+  The kernel was built with: 130
+  You are using:             0
+  CC [M]  cfg80211.o
+  CC [M]  chip.o
+  CC [M]  fwil.o
+  CC [M]  fweh.o
+  CC [M]  p2p.o
+  CC [M]  proto.o
+  CC [M]  common.o
+  CC [M]  core.o
+  CC [M]  firmware.o
+  CC [M]  fwvid.o
+  CC [M]  feature.o
+  CC [M]  btcoex.o
+  CC [M]  vendor.o
+  CC [M]  pno.o
+  CC [M]  xtlv.o
+  CC [M]  bcdc.o
+  CC [M]  fwsignal.o
+  CC [M]  commonring.o
+  CC [M]  flowring.o
+  CC [M]  msgbuf.o
+  CC [M]  sdio.o
+  CC [M]  bcmsdh.o
+  CC [M]  usb.o
+  CC [M]  pcie.o
+  CC [M]  dmi.o
+  CC [M]  acpi.o
+  LD [M]  brcmfmac.o
+  MODPOST Module.symvers
+  CC [M]  brcmfmac.mod.o
+  CC [M]  .module-common.o
+  LD [M]  brcmfmac.ko
+  BTF [M] brcmfmac.ko
+Skipping BTF generation for brcmfmac.ko due to unavailability of vmlinux
+make[1]: Saindo do diretório '/var/lib/dkms/brcmfmac-bcm4350-dfs/1.0/build'
+
+make: Saindo do diretório '/usr/src/kernels/7.2.4-200.fc44.x86_64'
+
+
+# exit code: 0
+# elapsed time: 00:00:13
+----------------------------------------------------------------
