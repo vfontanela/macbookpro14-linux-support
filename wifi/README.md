@@ -9,6 +9,17 @@ The two 2017 13-inch models use different Broadcom devices and require different
 
 Do not interchange NVRAM, firmware or regulatory blobs between chipsets.
 
+## BCM4350 kernel compatibility
+
+The `brcmfmac-bcm4350-dfs/1.0` package based on `v7.1.12` needs a callback signature adaptation for the reported Fedora `7.2.4-200.fc44.x86_64` build failure. See the [kernel 7.2 correction and rebuild procedure](BCM4350-DFS.md#kernel-72-compatibility-update-2026-09-10) before upgrading an installation that uses this DKMS module. The correction was reported applied locally; post-fix runtime validation is still to be recorded.
+
+### BCM4350 maintenance changelog
+
+- **2026-09-10:** Documented the `remain_on_channel` / `rx_addr` compatibility correction, explicit target-kernel rebuild commands, and evidence for 7.1.12, 7.1.13 and 7.2.4. DKMS package version remains `1.0`; this is a documentation update, with no new driver release.
+- **2026-09-01:** Published the BCM4350 DFS root cause, ISO3166 country-code fallback patch, DKMS packaging, installation, verification and rollback guide.
+
+
+
 ## BCM43602 on MacBookPro14,2
 
 Board-specific Broadcom BCM43602 NVRAM guidance for the 13-inch 2017 Touch Bar
