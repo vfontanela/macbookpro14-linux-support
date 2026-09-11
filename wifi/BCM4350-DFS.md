@@ -30,7 +30,7 @@ The patched path uses the requested ISO3166 alpha-2 country code with revision 0
 
 ## DKMS package
 
-Place the matching, patched `brcmfmac` sources under `/usr/src/brcmfmac-bcm4350-dfs-1.0/`, including shared `brcm80211` headers and the `wcc`, `cyw` and `bca` `vops.h` headers. The validated build used upstream tag `v7.1.12` and mirrored the Fedora kernel configuration for BCDC, MSGBUF, SDIO, USB, PCIe, DMI and ACPI.
+Place the matching, patched `brcmfmac` sources under `/usr/src/brcmfmac-bcm4350-dfs-1.0/`, including shared `brcm80211` headers and the `wcc`, `cyw` and `bca` `vops.h` headers. The original documentation reported a `v7.1.12` source base, but this package records no verifiable upstream commit; treat that base as reported, not pinned. The object list mirrored the Fedora kernel configuration for BCDC, MSGBUF, SDIO, USB, PCIe, DMI and ACPI.
 
 `dkms.conf`:
 
@@ -66,6 +66,8 @@ clean:
 
 ## Install
 
+For a new installation, obtain the corrected tree from the release above (or [source directory](brcmfmac-bcm4350-dfs-1.0/)) and place it at the `/usr/src/` path described above before running DKMS. Verify release downloads with `sha256sum -c SHA256SUMS`. Existing working installations do not need to be rebuilt merely to publish or inspect this release.
+
 ```bash
 sudo dnf install dkms gcc make kernel-devel-$(uname -r) kernel-headers
 sudo dkms add -m brcmfmac-bcm4350-dfs -v 1.0
@@ -88,6 +90,8 @@ iw dev wlp2s0 link
 
 Expected output includes `brcmfmac-bcm4350-dfs/1.0`, a module path under `/extra/` (or the distribution's DKMS updates directory), and the target AP at 5580 MHz. In `iw`, `passive` must be the final argument. Replace `wlp2s0` if necessary.
 
+`modinfo -F filename brcmfmac` reports the resolved on-disk module file; it does not alone prove which binary is already loaded. Matching `vermagic` is a consistency check, not a guarantee of all ABI or runtime compatibility. `lsmod` records loaded module names, not an exact binary fingerprint. The recorded association establishes connectivity on channel 116 for the tested system, not every DFS behavior.
+
 ## Roll back
 
 ```bash
@@ -101,14 +105,14 @@ This removes the DKMS module and restores the original in-tree `brcmfmac`. Reloa
 
 ## Kernel updates
 
-This DKMS package vendors kernel driver sources. After a major update, refresh the source tree and shared headers from the matching upstream tag and reconcile the object list with `/boot/config-$(uname -r)` if the build fails. Sources copied from v7.1.12 are not guaranteed to remain compatible with every future kernel.
+This DKMS package vendors kernel driver sources. After a major update, refresh the source tree and shared headers from the matching upstream tag and reconcile the object list with `/boot/config-$(uname -r)` if the build fails. These vendored sources are not guaranteed to remain compatible with every future kernel.
 
 
 ## Kernel 7.2 compatibility update (2026-09-10)
 
 The local maintenance report records a build failure on Fedora kernel `7.2.4-200.fc44.x86_64`: `cfg80211_ops.remain_on_channel` expects an additional `const u8 *rx_addr` argument, while the vendored `brcmf_p2p_remain_on_channel()` has the older signature. The diagnostic is `-Wincompatible-pointer-types` at the callback assignment in `cfg80211.c`. The accompanying `pahole` version warning is not the failing diagnostic.
 
-The correction reported as applied locally by Claude Code retains the `v7.1.12` source base and the BCM4350 country-code fallback patch. It adapts the declaration in `p2p.h` and definition in `p2p.c`; the callback assignment in `cfg80211.c` stays unchanged.
+The published correction retains the supplied source snapshot and the BCM4350 country-code fallback patch. The originally reported `v7.1.12` base is not backed by an upstream commit recorded in the package. It adapts the declaration in `p2p.h` and definition in `p2p.c`; the callback assignment in `cfg80211.c` stays unchanged.
 
 Add `#include <linux/version.h>` to `p2p.h`, then use this declaration:
 
@@ -133,7 +137,7 @@ Apply the same conditional signatures to the definition in `p2p.c` (without the 
 #endif
 ```
 
-This implementation does not use `rx_addr`. The version guard is the cutoff chosen in the maintenance report: the original package worked on 7.1.12 and 7.1.13 and failed on 7.2.4. It is not proof of the exact upstream introduction point or a guarantee for every 7.2+ kernel. Distribution backports may require checking the actual `include/net/cfg80211.h` callback signature and adjusting the guard.
+This implementation does not use `rx_addr`. The `KERNEL_VERSION(7, 2, 0)` version guard is an empirical cutoff chosen in the maintenance report: the original package worked on 7.1.12 and 7.1.13 and failed on 7.2.4. It is not proof of the exact upstream introduction point or a guarantee for every 7.2+ kernel. Distribution backports may require checking the actual `include/net/cfg80211.h` callback signature and adjusting the guard.
 
 ### Rebuild and verify the target kernel
 
@@ -158,7 +162,11 @@ Confirm `installed` for the target kernel and a DKMS module path. After booting 
 | --- | --- |
 | 7.1.12 (Fedora 44) | Original DFS patch built, loaded through modprobe, and connected on channel 116 / 5580 MHz. |
 | 7.1.13 | Original package reported working in the compatibility write-up. |
-| 7.2.4-200.fc44.x86_64 | Original callback build failure captured; signature correction reported applied locally. Post-fix build/install and runtime logs have not been included in this repository. |
+| 7.2.4-200.fc44.x86_64 | Corrected build completed with exit code 0; recorded boot into this kernel and association at 5580 MHz / DFS channel 116. See [build log](bcm4350-evidence/kernel-7.2.4/make-7.2.4-200.fc44.x86_64.log) and [validation](bcm4350-evidence/kernel-7.2.4/VALIDATION.md). |
 | Other kernels | Not established by these reports; inspect headers and validate build plus runtime. |
 
-This repository currently documents the BCM4350 DKMS procedure; the complete BCM4350 source tree and a distributable package are not present under `wifi/`. This update records the local correction and does not publish a new driver binary or change DKMS package version `1.0`.
+The corrected [source tree](brcmfmac-bcm4350-dfs-1.0/) includes `Makefile`, `dkms.conf`, shared headers and bca/cyw/wcc headers with license notices preserved. The [BCM4350 release](https://github.com/vfontanela/macbookpro14-linux-support/releases/tag/bcm4350-dfs-1.0-kernel7.2.4-r1) provides the source tarball, [callback patch](bcm4350-evidence/kernel-7.2.4/fix-remain_on_channel-kernel72.patch), [build log](bcm4350-evidence/kernel-7.2.4/make-7.2.4-200.fc44.x86_64.log), [technical summary](bcm4350-evidence/kernel-7.2.4/SUMMARY.md), [validation](bcm4350-evidence/kernel-7.2.4/VALIDATION.md), and [SHA-256 checksums](bcm4350-evidence/kernel-7.2.4/SHA256SUMS). Release tag `bcm4350-dfs-1.0-kernel7.2.4-r1` identifies this publication; DKMS `PACKAGE_VERSION="1.0"` remains unchanged. The archive already contains both fixes; do not apply the callback patch again. No compiled driver binary is distributed.
+
+## Maintenance changelog
+
+- **2026-09-10:** Published the corrected BCM4350 source package, callback patch, successful build log and post-reboot DFS association evidence. Preserved DKMS version `1.0`; distinguished the release tag, documented the unpinned upstream base and empirical version cutoff, and clarified module-identification limits.
