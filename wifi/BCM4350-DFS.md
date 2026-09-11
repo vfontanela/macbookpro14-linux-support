@@ -102,3 +102,63 @@ This removes the DKMS module and restores the original in-tree `brcmfmac`. Reloa
 ## Kernel updates
 
 This DKMS package vendors kernel driver sources. After a major update, refresh the source tree and shared headers from the matching upstream tag and reconcile the object list with `/boot/config-$(uname -r)` if the build fails. Sources copied from v7.1.12 are not guaranteed to remain compatible with every future kernel.
+
+
+## Kernel 7.2 compatibility update (2026-09-10)
+
+The local maintenance report records a build failure on Fedora kernel `7.2.4-200.fc44.x86_64`: `cfg80211_ops.remain_on_channel` expects an additional `const u8 *rx_addr` argument, while the vendored `brcmf_p2p_remain_on_channel()` has the older signature. The diagnostic is `-Wincompatible-pointer-types` at the callback assignment in `cfg80211.c`. The accompanying `pahole` version warning is not the failing diagnostic.
+
+The correction reported as applied locally by Claude Code retains the `v7.1.12` source base and the BCM4350 country-code fallback patch. It adapts the declaration in `p2p.h` and definition in `p2p.c`; the callback assignment in `cfg80211.c` stays unchanged.
+
+Add `#include <linux/version.h>` to `p2p.h`, then use this declaration:
+
+```c
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
+int brcmf_p2p_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
+                                struct ieee80211_channel *channel,
+                                unsigned int duration, u64 *cookie,
+                                const u8 *rx_addr);
+#else
+int brcmf_p2p_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
+                                struct ieee80211_channel *channel,
+                                unsigned int duration, u64 *cookie);
+#endif
+```
+
+Apply the same conditional signatures to the definition in `p2p.c` (without the trailing semicolons), keeping the existing function body. After its local variable declarations, add:
+
+```c
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
+    (void)rx_addr;
+#endif
+```
+
+This implementation does not use `rx_addr`. The version guard is the cutoff chosen in the maintenance report: the original package worked on 7.1.12 and 7.1.13 and failed on 7.2.4. It is not proof of the exact upstream introduction point or a guarantee for every 7.2+ kernel. Distribution backports may require checking the actual `include/net/cfg80211.h` callback signature and adjusting the guard.
+
+### Rebuild and verify the target kernel
+
+After updating the persistent sources in `/usr/src/brcmfmac-bcm4350-dfs-1.0/`, install development files matching the target kernel and rebuild it explicitly. Using `uname -r` before reboot would select the currently running kernel instead.
+
+```bash
+kernel_target=7.2.4-200.fc44.x86_64
+sudo dnf install "kernel-devel-${kernel_target}"
+# Remove an existing build/install for this target, if present in dkms status.
+sudo dkms remove brcmfmac-bcm4350-dfs/1.0 -k "$kernel_target"
+sudo dkms build brcmfmac-bcm4350-dfs/1.0 -k "$kernel_target"
+sudo dkms install brcmfmac-bcm4350-dfs/1.0 -k "$kernel_target"
+dkms status
+modinfo -k "$kernel_target" -F filename brcmfmac
+```
+
+Confirm `installed` for the target kernel and a DKMS module path. After booting that kernel, record `uname -r`, `modinfo -F filename brcmfmac`, `iw dev wlp2s0 link`, and a passive scan on the locally permitted target frequency. Module reloads interrupt Wi-Fi; perform them from a local console. A build/install result alone does not establish runtime or DFS connectivity.
+
+### Compatibility evidence
+
+| Kernel | Evidence available |
+| --- | --- |
+| 7.1.12 (Fedora 44) | Original DFS patch built, loaded through modprobe, and connected on channel 116 / 5580 MHz. |
+| 7.1.13 | Original package reported working in the compatibility write-up. |
+| 7.2.4-200.fc44.x86_64 | Original callback build failure captured; signature correction reported applied locally. Post-fix build/install and runtime logs have not been included in this repository. |
+| Other kernels | Not established by these reports; inspect headers and validate build plus runtime. |
+
+This repository currently documents the BCM4350 DKMS procedure; the complete BCM4350 source tree and a distributable package are not present under `wifi/`. This update records the local correction and does not publish a new driver binary or change DKMS package version `1.0`.
