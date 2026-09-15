@@ -15,6 +15,7 @@ Linux support documentation and packages for the 2017 13-inch **MacBookPro14,x**
 | Model | Distribution / kernel | Validated result |
 |---|---|---|
 | MacBookPro14,1 | Fedora 44, kernel 7.1.12 | CS8409 audio; BCM4350 2.4/5 GHz, including DFS channel 116 with patched `brcmfmac` |
+| MacBookPro14,1 | Fedora 44, kernel 7.2.5 | BCM4350 Wi-Fi requires `pcie_aspm=off` on the kernel command line (PCIe ASPM probe regression, unrelated to the DFS DKMS package); see [wifi/BCM4350-PCIe-ASPM-kernel7.2.5.md](wifi/BCM4350-PCIe-ASPM-kernel7.2.5.md) |
 | MacBookPro14,2 | Fedora 44, kernel 7.1.10 | CS8409 audio; BCM43602 2.4/5 GHz; T1 Touch Bar and ambient light sensor |
 | MacBookPro14,2 | Ubuntu / Kubuntu | Existing Debian package workflows for audio and Touch Bar; board-specific BCM43602 NVRAM |
 
@@ -24,6 +25,7 @@ Linux support documentation and packages for the 2017 13-inch **MacBookPro14,x**
 - Both models use the same `snd_hda_macbookpro` audio solution.
 - MacBookPro14,1 has no Touch Bar and does not need a T1/iBridge package.
 - BCM4350 DFS support on MacBookPro14,1 requires the one-line country-code fallback patch documented in [wifi/BCM4350-DFS.md](wifi/BCM4350-DFS.md).
+- BCM4350 Wi-Fi on MacBookPro14,1 kernel 7.2.5 requires `pcie_aspm=off` on the kernel command line — a PCIe power-management regression that stops `brcmfmac` from probing the chip at all, unrelated to the DFS DKMS package. See [wifi/BCM4350-PCIe-ASPM-kernel7.2.5.md](wifi/BCM4350-PCIe-ASPM-kernel7.2.5.md).
 - BCM43602 5 GHz on MacBookPro14,2 requires the complete board NVRAM, not a minimal parameter file. Its `macaddr` must come from `ethtool -P` because the active interface address can be randomized.
 
 Ubuntu and Kubuntu instructions already present in each component guide have been retained.
