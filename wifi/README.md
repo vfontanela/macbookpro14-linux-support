@@ -15,8 +15,11 @@ The corrected `brcmfmac-bcm4350-dfs/1.0` source package is [published here](http
 
 The original documentation reported a `v7.1.12` source base, but the package records no verifiable upstream commit. The `KERNEL_VERSION(7, 2, 0)` cutoff is empirical. `modinfo` shows the resolved file, not proof of the exact loaded binary; matching `vermagic` does not guarantee full compatibility. Other kernels need their own build and runtime validation.
 
+Kernel `7.2.5-200.fc44.x86_64` introduced a separate, unrelated failure: `brcmfmac` fails to probe the BCM4350 at all (`brcmf_pcie_probe: failed 14e4:43a3`), traced to a PCIe ASPM power-management regression rather than a DKMS/build problem. See [BCM4350-PCIe-ASPM-kernel7.2.5.md](BCM4350-PCIe-ASPM-kernel7.2.5.md) for the root cause, the `pcie_aspm=off` workaround, and compatibility evidence.
+
 ### BCM4350 maintenance changelog
 
+- **2026-09-15:** Documented a `brcmfmac` probe failure on kernel `7.2.5-200.fc44.x86_64` (PCIe ASPM regression, unrelated to the DFS DKMS package) and the `pcie_aspm=off` fix; see [BCM4350-PCIe-ASPM-kernel7.2.5.md](BCM4350-PCIe-ASPM-kernel7.2.5.md).
 - **2026-09-10:** Published the corrected source tree with Makefile, DKMS configuration, shared/vendor headers and preserved license notices; attached the source archive, callback patch, successful build log, summary, validation and SHA-256 checksums. Release tag `bcm4350-dfs-1.0-kernel7.2.4-r1` identifies this publication; DKMS `PACKAGE_VERSION="1.0"` remains unchanged. The archive already includes the fix.
 - **2026-09-10 (earlier):** Documented the `remain_on_channel` / `rx_addr` correction and explicit target-kernel rebuild procedure. The later publication above supplies the previously pending validation.
 - **2026-09-01:** Published the BCM4350 DFS root cause, ISO3166 country-code fallback patch, DKMS packaging, installation, verification and rollback guide.
@@ -88,7 +91,7 @@ board-specific filename:
 
 ```bash
 sudo install -d /usr/lib/firmware/brcm
-sudo install -m 0644 brcmfmac43602-pcie.Apple\ Inc.-MacBookPro14,2.txt   "/usr/lib/firmware/brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt"
+sudo install -m 0644 brcmfmac43602-pcie.Apple\ Inc.-MacBookPro14,2.txt "/usr/lib/firmware/brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt"
 sudo reboot
 ```
 
@@ -96,7 +99,7 @@ If the firmware lookup on a particular kernel requests the generic name, also
 install the same complete file as a fallback:
 
 ```bash
-sudo cp   "/usr/lib/firmware/brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt"   /usr/lib/firmware/brcm/brcmfmac43602-pcie.txt
+sudo cp "/usr/lib/firmware/brcm/brcmfmac43602-pcie.Apple Inc.-MacBookPro14,2.txt" /usr/lib/firmware/brcm/brcmfmac43602-pcie.txt
 sudo reboot
 ```
 
