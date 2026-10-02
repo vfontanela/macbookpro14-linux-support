@@ -29,8 +29,8 @@ Clone this repository and build the RPM that registers the driver with DKMS:
 git clone https://github.com/vfontanela/macbookpro14-linux-support.git
 cd macbookpro14-linux-support/touchbar
 sudo dnf install rpm-build
-rpmbuild -ba rpm/mbp-t1-touchbar-dkms.spec
-sudo dnf install ~/rpmbuild/RPMS/noarch/mbp-t1-touchbar-dkms-*.noarch.rpm
+bash build-rpm.sh
+sudo dnf install ./dist/mbp-t1-touchbar-dkms-*.noarch.rpm
 sudo reboot
 ```
 
@@ -94,3 +94,24 @@ The driver is out of tree and based on
 [parport0/mbp-t1-touchbar-driver](https://github.com/parport0/mbp-t1-touchbar-driver),
 originally written by Ronald Tschalär. See
 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for additional diagnostics.
+
+## Touch Bar activation fix (1.0-3)
+
+The service and both packages use `/usr/libexec/mbp-t1-touchbar/bind-touchbar.sh`.
+On newer kernels, hid-sensor-hub can claim the physical display HID under the
+iBridge USB :1.3 interface and its virtual 1D6B:0301 HID. The script discovers
+current IDs, reprobes USB, and binds those two layers to apple-ibridge-hid and
+apple-ib-touchbar. It does not globally blacklist hid-sensor-hub.
+
+Success requires idle_timeout, dim_timeout, and fnmode on a Touch Bar HID under
+that same iBridge (:1.2 or :1.3); the driver normally puts controls on the mode
+HID under :1.2. Recovery mode (05ac:1281) still reports that macOS must restore
+the firmware. The manual two-layer fix was validated on Fedora 44 / kernel
+7.2.8. Clean package installation, upgrade, reboot/resume, and Debian hardware
+testing remain to be performed.
+
+Retry activation with `sudo systemctl restart mbp-t1-touchbar-bind.service`.
+Build the DEB with `bash build.sh` (requires dpkg-deb) and the RPM with
+`bash build-rpm.sh` (requires rpmbuild). Both are DKMS source packages, with
+unchanged driver sources and DKMS module version 0.3; package version is 1.0-3.
+Run regression checks with `python3 tests/test_binding.py -v`.
