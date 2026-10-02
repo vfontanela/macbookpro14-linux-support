@@ -8,11 +8,11 @@
 
 Name:           mbp-t1-touchbar-dkms
 Version:        1.0
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        T1 iBridge / Touch Bar driver (DKMS) for MacBook Pro 2016/2017
 
 License:        GPLv2
-URL:            https://github.com/parport0/mbp-t1-touchbar-driver
+URL:            https://github.com/vfontanela/macbookpro14-linux-support
 Source0:        %{modname}-%{modver}.tar.gz
 
 BuildArch:      noarch
@@ -57,7 +57,7 @@ rm -rf %{buildroot}
 
 # kernel module source, laid out for DKMS
 install -d %{buildroot}%{_usrsrc}/%{modname}-%{modver}
-cp -a src/*.c %{buildroot}%{_usrsrc}/%{modname}-%{modver}/
+cp -a src/apple-ibridge.c src/apple-ib-tb.c src/apple-ib-als.c %{buildroot}%{_usrsrc}/%{modname}-%{modver}/
 cp -a src/linux %{buildroot}%{_usrsrc}/%{modname}-%{modver}/
 cp -a src/Makefile %{buildroot}%{_usrsrc}/%{modname}-%{modver}/
 cp -a src/dkms.conf %{buildroot}%{_usrsrc}/%{modname}-%{modver}/
@@ -142,6 +142,10 @@ fi
 %config(noreplace) %{_sysconfdir}/modules-load.d/mbp-t1-touchbar.conf
 
 %changelog
+* Thu Oct 01 2026 Vinicius Fontanela - 1.0-3
+- Correct systemd script path and both display HID bindings on newer kernels
+- Scope activation verification to the detected iBridge Touch Bar
+
 * Mon Jul 13 2026 Vinicius Fontanela <[email protected]> - 1.0-2
 - Fixed dkms.conf: removed custom MAKE[0] override that broke the
   module Makefile's kbuild-mode branch (make: No targets. Stop.)
