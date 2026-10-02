@@ -9,6 +9,7 @@ Linux support documentation and packages for the 2017 13-inch **MacBookPro14,x**
 | Internal audio | Cirrus CS8409 with `snd_hda_macbookpro` DKMS | Cirrus CS8409 with `snd_hda_macbookpro` DKMS | [audio/README.md](audio/README.md) |
 | Wi-Fi | BCM4350 `[14e4:43a3]`; `brcmfmac-bcm4350-dfs/1.0` DKMS for DFS UNII-2e | BCM43602 `[14e4:43ba]`; complete calibrated board NVRAM | [wifi/README.md](wifi/README.md) |
 | Touch Bar / ambient light sensor | Not present; standard function-key row | T1 iBridge with `mbp-t1-touchbar` DKMS | [touchbar/README.md](touchbar/README.md) |
+| Camera / FaceTime HD | PCIe `14e4:1570`: separate facetimehd DKMS package; user-confirmed working camera | USB iBridge / `uvcvideo` observed on the development Mac; no PCIe package needed | [camera/README.md](camera/README.md) |
 
 ## Tested configurations
 
@@ -29,3 +30,32 @@ Linux support documentation and packages for the 2017 13-inch **MacBookPro14,x**
 - BCM43602 5 GHz on MacBookPro14,2 requires the complete board NVRAM, not a minimal parameter file. Its `macaddr` must come from `ethtool -P` because the active interface address can be randomized.
 
 Ubuntu and Kubuntu instructions already present in each component guide have been retained.
+
+## Camera installation by model
+
+The new `camera/` component is independent of Touch Bar, audio and Wi-Fi.
+Install it only when `lspci -nn -d 14e4:1570` finds the supported PCIe camera;
+USB/iBridge cameras use `uvcvideo`. Both package families check hardware before
+installing/configuring DKMS. Driver/tool GPL licenses and pinned upstream
+revisions are recorded in `camera/UPSTREAM.md`; proprietary firmware is obtained
+and extracted only on the user's machine, never redistributed in packages.
+
+Build the independent Touch Bar and camera RPM/DEB packages with
+`bash tools/build-support.sh /absolute/output/path` (requires dpkg-deb,
+rpmbuild, Python, make and tar). There is deliberately no metapackage requiring
+both components on models that do not have both devices. The existing Touch Bar
+1.0-3 sources/service/binding fix is preserved unchanged.
+
+**MacBookPro14,1 (A1708):** install the camera RPM/DEB from the latest release,
+then run `sudo macbook-facetimehd setup`. It keeps working firmware, extracts it
+locally only if absent, and activates only the supported PCIe camera. The
+checkout installer also completes setup automatically; see [camera/README.md](camera/README.md).
+
+**MacBookPro14,2 (A1706):** keep the USB iBridge camera's `uvcvideo` support;
+install the separate Touch Bar package if needed. Do not install facetimehd on
+this model's USB camera. Both package families reject absent PCIe hardware.
+
+The user confirmed FaceTime HD had already worked on the 14,1 and accepted
+release without repeating all hardware tests. This packaged snapshot passed
+clean builds; exact-snapshot streaming, Debian lifecycle and Secure Boot were
+not independently validated. Optional diagnostics remain documented.
