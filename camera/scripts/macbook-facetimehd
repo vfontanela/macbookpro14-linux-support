@@ -1,0 +1,104 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0-only
+set -euo pipefail
+source /usr/libexec/macbook-facetimehd/hardware.sh
+root_required() { [[ $EUID == 0 ]] || { echo 'Run this action with sudo.' >&2; exit 1; }; }
+case "${1:-diagnose}" in
+    setup)
+        facetimehd_require_hardware
+        root_required
+        [[ $# == 1 ]] || { echo 'Usage: sudo macbook-facetimehd setup' >&2; exit 2; }
+        if [[ ! -s '@FIRMWARE_ROOT@/facetimehd/firmware.bin' ]]; then
+            "$0" firmware
+        else
+            echo 'Keeping existing camera firmware.'
+        fi
+        # Explicit setup targets only the supported PCIe camera, including bdc_pci conflicts.
+        "$0" activate --rebind
+        ;;
+    detect)
+        facetimehd_require_hardware
+        facetimehd_devices
+        ;;
+    diagnose)
+        uname -r
+        echo 'Supported PCIe camera:'
+        lspci -nnk -d 14e4:1570 || true
+        echo 'Loaded camera/V4L2 modules:'
+        lsmod | grep -E '^(facetimehd|uvcvideo|videodev|videobuf2_)' || true
+        echo 'V4L2 devices (including USB cameras):'
+        v4l2-ctl --list-devices || true
+        echo 'All video nodes:'
+        for node in /dev/video*; do [[ -e "$node" ]] && ls -l "$node"; done
+        echo 'Nodes belonging to supported PCIe camera:'
+        facetimehd_video_nodes
+        echo 'DKMS status:'
+        dkms status -m facetimehd || true
+        echo 'Installed module dependencies:'
+        modinfo -F depends facetimehd || true
+        ;;
+    firmware)
+        facetimehd_require_hardware
+        root_required
+        [[ $# == 1 || ( $# == 2 && "$2" == --replace ) ]] || {
+            echo 'Usage: macbook-facetimehd firmware [--replace]' >&2; exit 2;
+        }
+        if [[ -e '@FIRMWARE_ROOT@/facetimehd/firmware.bin' ]]; then
+            [[ "${2:-}" == --replace ]] || {
+                echo 'Existing firmware retained. To replace deliberately, pass --replace.' >&2
+                exit 1
+            }
+            install -d -m 0755 /var/lib/macbook-facetimehd
+            backup=$(mktemp -d /var/lib/macbook-facetimehd/firmware-backup.XXXXXX)
+            cp -a '@FIRMWARE_ROOT@/facetimehd/.' "$backup/"
+            echo "Existing firmware backed up to $backup"
+        fi
+        # Firmware is downloaded on this machine, never shipped in our packages.
+        export FACETIMEHD_FIRMWARE_DIR='@FIRMWARE_ROOT@/facetimehd'
+        /usr/libexec/macbook-facetimehd/facetimehd-firmware-install.sh
+        echo 'Firmware installed. Run: sudo macbook-facetimehd activate'
+        ;;
+    activate)
+        facetimehd_require_hardware
+        root_required
+        [[ $# == 1 || ( $# == 2 && "$2" == --rebind ) ]] || {
+            echo 'Usage: macbook-facetimehd activate [--rebind]' >&2; exit 2;
+        }
+        [[ -s '@FIRMWARE_ROOT@/facetimehd/firmware.bin' ]] || {
+            echo 'Firmware missing. Run: sudo macbook-facetimehd firmware' >&2; exit 1;
+        }
+        for bdf in $(facetimehd_devices); do
+            dev="/sys/bus/pci/devices/$bdf"
+            current=$(basename "$(readlink -f "$dev/driver")")
+            if [[ -L "$dev/driver" && "$current" != facetimehd ]]; then
+                [[ "${2:-}" == --rebind ]] || {
+                    echo "$bdf belongs to $current. To rebind ONLY this camera, use activate --rebind." >&2
+                    exit 1
+                }
+                # Do not globally blacklist or unload bdc_pci.
+                printf %s "$bdf" > "$dev/driver/unbind"
+            fi
+        done
+        modprobe facetimehd
+        for bdf in $(facetimehd_devices); do
+            dev="/sys/bus/pci/devices/$bdf"
+            if [[ ! -L "$dev/driver" ]]; then
+                printf %s "$bdf" > /sys/bus/pci/drivers/facetimehd/bind
+            fi
+            [[ "$(basename "$(readlink -f "$dev/driver")")" == facetimehd ]] || exit 1
+        done
+        nodes=$(facetimehd_video_nodes)
+        [[ -n "$nodes" ]] || { echo 'No V4L2 node for the PCIe camera; check kernel logs.' >&2; exit 1; }
+        printf '%s\n' "$nodes"
+        ;;
+    test-stream)
+        facetimehd_require_hardware
+        [[ $# == 1 ]] || { echo 'Usage: macbook-facetimehd test-stream' >&2; exit 2; }
+        nodes=$(facetimehd_video_nodes)
+        [[ -n "$nodes" ]] || { echo 'No video node for the supported PCIe camera.' >&2; exit 1; }
+        node=${nodes%%$'\n'*}
+        v4l2-ctl --device="$node" --all
+        timeout 30 v4l2-ctl --device="$node" --stream-mmap --stream-count=30 --stream-to=/dev/null
+        ;;
+    *) echo 'Usage: macbook-facetimehd {setup|detect|diagnose|firmware|activate [--rebind]|test-stream}' >&2; exit 2 ;;
+esac
