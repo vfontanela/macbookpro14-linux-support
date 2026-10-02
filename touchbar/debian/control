@@ -1,5 +1,5 @@
 Package: mbp-t1-touchbar-dkms
-Version: 1.0-2
+Version: 1.0-3
 Section: kernel
 Priority: optional
 Architecture: all
