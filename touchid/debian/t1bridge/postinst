@@ -1,0 +1,43 @@
+#!/bin/sh
+set -e
+
+# usbmuxd's rule forces every 05ac:8600 (the iBridge) into USB configuration 1,
+# which has no Secure Enclave interface and undoes t1_cfgsel. Mask it with a
+# copy that leaves the iBridge alone (same file name in /etc wins). The first
+# line marks the copy as ours; an administrator's own file is never replaced.
+mask_usbmuxd() {
+	src=/usr/lib/udev/rules.d/39-usbmuxd.rules
+	dst=/etc/udev/rules.d/39-usbmuxd.rules
+	[ -f "$src" ] || return 0
+	mkdir -p /etc/udev/rules.d
+	{
+		echo "# t1bridge: generated from $src without the Apple iBridge entries; local edits are overwritten"
+		sed -e 's,|5ac/8600/\*,,g' -e '\,5ac/8600/,d' "$src"
+	} > "$dst.t1bridge-new"
+	# Ours: absent, marked, or the unmarked copy written by preview.1.
+	if [ ! -e "$dst" ] || head -n1 "$dst" | grep -qF '# t1bridge: generated' ||
+	   tail -n +2 "$dst.t1bridge-new" | cmp -s - "$dst"; then
+		mv -f "$dst.t1bridge-new" "$dst"
+		udevadm control --reload >/dev/null 2>&1 || true
+	else
+		rm -f "$dst.t1bridge-new"
+		echo "t1bridge: $dst is a local administrator file; leaving it unchanged." >&2
+		echo "t1bridge: remove 5ac/8600 from it, or usbmuxd returns the iBridge to USB configuration 1." >&2
+	fi
+}
+
+case "$1" in
+configure)
+	systemd-sysusers t1bridge.conf >/dev/null 2>&1 || true
+	systemd-tmpfiles --create t1bridge.conf >/dev/null 2>&1 || true
+	mask_usbmuxd
+	systemctl daemon-reload >/dev/null 2>&1 || true
+	systemctl enable t1-touchbar-hw.service t1-touchid-auth.socket \
+		t1bridge-fingerprint.socket >/dev/null 2>&1 || true
+	systemctl --global enable t1-touchbar.service >/dev/null 2>&1 || true
+	;;
+triggered)
+	mask_usbmuxd
+	;;
+esac
+exit 0

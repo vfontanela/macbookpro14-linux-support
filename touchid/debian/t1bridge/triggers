@@ -1,0 +1,2 @@
+# Regenerate the usbmuxd rule mask whenever usbmuxd ships a new rule.
+interest-noawait /usr/lib/udev/rules.d/39-usbmuxd.rules

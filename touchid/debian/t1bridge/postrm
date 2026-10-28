@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+# Protected state in /var/lib/t1bridge is kept on purpose, even on purge:
+# deleting it desynchronizes the Secure Enclave.
+case "$1" in
+remove|purge)
+	if head -n1 /etc/udev/rules.d/39-usbmuxd.rules 2>/dev/null | grep -qF '# t1bridge: generated'; then
+		rm -f /etc/udev/rules.d/39-usbmuxd.rules
+	fi
+	udevadm control --reload >/dev/null 2>&1 || true
+	systemctl daemon-reload >/dev/null 2>&1 || true
+	;;
+esac
+exit 0

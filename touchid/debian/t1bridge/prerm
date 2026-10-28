@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+if [ "$1" = remove ]; then
+	systemctl --global disable t1-touchbar.service >/dev/null 2>&1 || true
+	systemctl disable --now t1-touchbar-hw.service t1-touchid-auth.socket \
+		t1bridge-fingerprint.socket t1-touchid-auth.service \
+		t1bridge-keybag.service >/dev/null 2>&1 || true
+fi
+exit 0
