@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+# Only on removal: an upgrade keeps the modules until the new postinst has
+# built its version (it then drops the old registration).
+if [ "$1" = remove ]; then
+	dkms remove -m t1bridge-dkms -v @VERSION@ --all >/dev/null 2>&1 || true
+fi
+exit 0

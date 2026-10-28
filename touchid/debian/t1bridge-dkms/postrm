@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+	if command -v dracut >/dev/null 2>&1 && dpkg-query -W -f='${Status}' dracut 2>/dev/null | grep -q 'ok installed'; then
+		dracut --regenerate-all --force >/dev/null 2>&1 || true
+	elif command -v update-initramfs >/dev/null 2>&1; then
+		update-initramfs -u -k all >/dev/null 2>&1 || true
+	fi
+fi
+exit 0

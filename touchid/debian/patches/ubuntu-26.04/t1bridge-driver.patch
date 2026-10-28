@@ -1,0 +1,1090 @@
+Description: Add the T1Bridge Apple Touch ID driver
+ Ported from packaging/arch/libfprint-t1bridge/0001-Add-T1Bridge-fingerprint-driver.patch
+ to this distribution's libfprint. Adds FP_DEVICE_TYPE_USB_PRESENCE (appended
+ last to keep the enum ABI) and the t1bridge driver, which talks to the
+ T1Bridge broker over /run/t1bridge/fingerprint.sock instead of USB.
+ The upstream test-suite additions are omitted. The new internal helper is
+ G_GNUC_INTERNAL so libfprint-2-tod1 does not export it as new ABI.
+Origin: https://github.com/standardagents/t1bridge
+Forwarded: not-needed
+---
+diff --git a/libfprint/drivers/t1bridge-protocol.c b/libfprint/drivers/t1bridge-protocol.c
+new file mode 100644
+index 0000000..74621cf
+--- /dev/null
++++ b/libfprint/drivers/t1bridge-protocol.c
+@@ -0,0 +1,89 @@
++#include "t1bridge-protocol.h"
++
++#include <string.h>
++
++static gboolean
++valid_id (const guint8 id[T1FP_ID_SIZE])
++{
++  static const guint8 zero[T1FP_ID_SIZE];
++
++  return memcmp (id, zero, sizeof (zero)) != 0;
++}
++
++gboolean
++t1bridge_packet_parse (const guint8 *packet, gsize size,
++                       T1bridgePacket *parsed)
++{
++  guint payload_size;
++
++  if (!packet || !parsed || size < T1FP_HEADER || size > T1FP_MAX_PACKET ||
++      memcmp (packet, "T1FP", 4) || packet[4] != 1 ||
++      packet[6] || packet[7] || packet[10] || packet[11])
++    return FALSE;
++
++  payload_size = ((guint) packet[8] << 8) | packet[9];
++  if (payload_size != size - T1FP_HEADER)
++    return FALSE;
++
++  parsed->type = packet[5];
++  parsed->payload = packet + T1FP_HEADER;
++  parsed->payload_size = payload_size;
++  return TRUE;
++}
++
++gboolean
++t1bridge_identities_parse (const guint8 *payload, gsize size,
++                           guint max_identities,
++                           T1bridgeIdentityList *parsed)
++{
++  T1bridgeIdentityList result = { 0 };
++  gsize cursor = 0;
++  guint username_length;
++
++  if (!payload || !parsed || size < 1 ||
++      max_identities == 0 || max_identities > T1FP_MAX_IDENTITIES)
++    return FALSE;
++
++  result.count = payload[cursor++];
++  if (result.count > max_identities)
++    return FALSE;
++  if (result.count == 0) {
++    if (cursor != size)
++      return FALSE;
++    *parsed = result;
++    return TRUE;
++  }
++
++  if (cursor >= size)
++    return FALSE;
++  username_length = payload[cursor++];
++  if (username_length == 0 || cursor + username_length > size ||
++      memchr (payload + cursor, 0, username_length) ||
++      !g_utf8_validate ((const gchar *) payload + cursor, username_length, NULL))
++    return FALSE;
++  memcpy (result.username, payload + cursor, username_length);
++  result.username[username_length] = '\0';
++  cursor += username_length;
++
++  for (guint i = 0; i < result.count; i++) {
++    T1bridgeIdentity *identity = &result.identities[i];
++
++    if (cursor + T1FP_ID_SIZE + 1 > size)
++      return FALSE;
++    memcpy (identity->id, payload + cursor, T1FP_ID_SIZE);
++    cursor += T1FP_ID_SIZE;
++    identity->finger = payload[cursor++];
++    if (!valid_id (identity->id) || identity->finger < T1FP_FINGER_MIN ||
++        identity->finger > T1FP_FINGER_MAX)
++      return FALSE;
++    for (guint j = 0; j < i; j++) {
++      if (memcmp (result.identities[j].id, identity->id, T1FP_ID_SIZE) == 0)
++        return FALSE;
++    }
++  }
++
++  if (cursor != size)
++    return FALSE;
++  *parsed = result;
++  return TRUE;
++}
+diff --git a/libfprint/drivers/t1bridge-protocol.h b/libfprint/drivers/t1bridge-protocol.h
+new file mode 100644
+index 0000000..fc8cf8c
+--- /dev/null
++++ b/libfprint/drivers/t1bridge-protocol.h
+@@ -0,0 +1,34 @@
++#pragma once
++
++#include <glib.h>
++
++#define T1FP_HEADER 12
++#define T1FP_MAX_PACKET 1024
++#define T1FP_MAX_USERNAME 255
++#define T1FP_ID_SIZE 16
++#define T1FP_MAX_IDENTITIES 5
++#define T1FP_FINGER_MIN 1
++#define T1FP_FINGER_MAX 10
++
++typedef struct {
++  guint8 type;
++  const guint8 *payload;
++  gsize payload_size;
++} T1bridgePacket;
++
++typedef struct {
++  guint8 id[T1FP_ID_SIZE];
++  guint8 finger;
++} T1bridgeIdentity;
++
++typedef struct {
++  guint count;
++  gchar username[T1FP_MAX_USERNAME + 1];
++  T1bridgeIdentity identities[T1FP_MAX_IDENTITIES];
++} T1bridgeIdentityList;
++
++gboolean t1bridge_packet_parse (const guint8 *packet, gsize size,
++                                T1bridgePacket *parsed);
++gboolean t1bridge_identities_parse (const guint8 *payload, gsize size,
++                                    guint max_identities,
++                                    T1bridgeIdentityList *parsed);
+diff --git a/libfprint/drivers/t1bridge.c b/libfprint/drivers/t1bridge.c
+new file mode 100644
+index 0000000..7996d16
+--- /dev/null
++++ b/libfprint/drivers/t1bridge.c
+@@ -0,0 +1,683 @@
++/* T1Bridge client driver. */
++#ifndef _GNU_SOURCE
++#define _GNU_SOURCE
++#endif
++#define FP_COMPONENT "t1bridge"
++
++#include "drivers_api.h"
++#include "t1bridge-protocol.h"
++
++#include <errno.h>
++#include <glib-unix.h>
++#include <stddef.h>
++#include <stdint.h>
++#include <string.h>
++#include <sys/socket.h>
++#include <sys/un.h>
++#include <unistd.h>
++
++#define T1BRIDGE_BROKER_PATH "/run/t1bridge/fingerprint.sock"
++
++#define T1FP_REQUIRED_CAPS 0x003f
++
++G_STATIC_ASSERT (FP_FINGER_FIRST == T1FP_FINGER_MIN);
++G_STATIC_ASSERT (FP_FINGER_LAST == T1FP_FINGER_MAX);
++
++enum {
++  C_CAPS = 0x01, C_OPEN, C_LIST, C_ENROLL, C_VERIFY, C_IDENTIFY, C_DELETE, C_CANCEL,
++  S_CAPS = 0x81, S_OPENED, S_IDENTITIES, S_PROGRESS, S_TERMINAL,
++};
++
++typedef enum {
++  P_IDLE, P_CAPS, P_OPEN, P_LIST, P_ENROLL, P_VERIFY, P_IDENTIFY, P_DELETE,
++} Pending;
++
++struct _FpiDeviceT1bridge {
++  FpDevice parent;
++  gint fd;
++  GSource *connect_source;
++  GSource *read_source;
++  Pending pending;
++  gboolean cancel_sent;
++  guint8 max_identities;
++  guint8 expected_id[T1FP_ID_SIZE];
++};
++
++G_DECLARE_FINAL_TYPE (FpiDeviceT1bridge, fpi_device_t1bridge,
++                      FPI, DEVICE_T1BRIDGE, FpDevice)
++G_DEFINE_TYPE (FpiDeviceT1bridge, fpi_device_t1bridge, FP_TYPE_DEVICE)
++
++static const FpIdEntry id_table[] = {
++  { .vid = 0x05ac, .pid = 0x8600 },
++  { .vid = 0 },
++};
++
++static GError *
++device_error (FpDeviceError code, const gchar *message)
++{
++  return fpi_device_error_new_msg (code, "%s", message);
++}
++
++static void
++close_connection (FpiDeviceT1bridge *self)
++{
++  if (self->connect_source) {
++    g_source_destroy (self->connect_source);
++    g_clear_pointer (&self->connect_source, g_source_unref);
++  }
++  if (self->read_source) {
++    g_source_destroy (self->read_source);
++    g_clear_pointer (&self->read_source, g_source_unref);
++  }
++  if (self->fd >= 0)
++    close (self->fd);
++  self->fd = -1;
++}
++
++static void
++complete_error (FpiDeviceT1bridge *self, GError *error, gboolean disconnect)
++{
++  FpDevice *device = FP_DEVICE (self);
++  Pending pending = self->pending;
++
++  if (disconnect)
++    close_connection (self);
++  self->pending = P_IDLE;
++  self->cancel_sent = FALSE;
++  fpi_device_report_finger_status (device, FP_FINGER_STATUS_NONE);
++
++  switch (pending) {
++  case P_CAPS:
++  case P_OPEN:
++    fpi_device_open_complete (device, error);
++    break;
++  case P_LIST:
++    fpi_device_list_complete (device, NULL, error);
++    break;
++  case P_ENROLL:
++    fpi_device_enroll_complete (device, NULL, error);
++    break;
++  case P_VERIFY:
++    fpi_device_verify_complete (device, error);
++    break;
++  case P_IDENTIFY:
++    fpi_device_identify_complete (device, error);
++    break;
++  case P_DELETE:
++    fpi_device_delete_complete (device, error);
++    break;
++  case P_IDLE:
++    g_error_free (error);
++    break;
++  }
++}
++
++static gboolean
++valid_id (const guint8 id[T1FP_ID_SIZE])
++{
++  static const guint8 zero[T1FP_ID_SIZE];
++  return memcmp (id, zero, sizeof (zero)) != 0;
++}
++
++static gboolean
++print_id (FpPrint *print, guint8 id[T1FP_ID_SIZE])
++{
++  g_autoptr(GVariant) data = NULL;
++  gconstpointer bytes;
++  gsize size;
++
++  g_object_get (print, "fpi-data", &data, NULL);
++  if (!data || !g_variant_is_of_type (data, G_VARIANT_TYPE_BYTESTRING))
++    return FALSE;
++  bytes = g_variant_get_fixed_array (data, &size, sizeof (guint8));
++  if (!bytes || size != T1FP_ID_SIZE)
++    return FALSE;
++  memcpy (id, bytes, T1FP_ID_SIZE);
++  return valid_id (id);
++}
++
++static void
++set_print_id (FpPrint *print, const guint8 id[T1FP_ID_SIZE])
++{
++  GVariant *data = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, id,
++                                               T1FP_ID_SIZE, sizeof (guint8));
++  fpi_print_set_type (print, FPI_PRINT_RAW);
++  fpi_print_set_device_stored (print, TRUE);
++  g_object_set (print, "fpi-data", data, NULL);
++}
++
++static FpPrint *
++new_print (FpiDeviceT1bridge *self, const gchar *username, guint8 finger,
++           const guint8 id[T1FP_ID_SIZE])
++{
++  FpPrint *print = fp_print_new (FP_DEVICE (self));
++  fp_print_set_username (print, username);
++  fp_print_set_finger (print, (FpFinger) finger);
++  set_print_id (print, id);
++  return print;
++}
++
++static gboolean
++send_packet (FpiDeviceT1bridge *self, guint8 type,
++             const guint8 *payload, gsize payload_size)
++{
++  guint8 packet[T1FP_MAX_PACKET];
++  gsize size = T1FP_HEADER + payload_size;
++  ssize_t sent;
++
++  if (payload_size > sizeof (packet) - T1FP_HEADER)
++    goto fail;
++  memcpy (packet, "T1FP", 4);
++  packet[4] = 1;
++  packet[5] = type;
++  packet[6] = packet[7] = packet[10] = packet[11] = 0;
++  packet[8] = (payload_size >> 8) & 0xff;
++  packet[9] = payload_size & 0xff;
++  if (payload_size)
++    memcpy (packet + T1FP_HEADER, payload, payload_size);
++  sent = send (self->fd, packet, size, MSG_DONTWAIT | MSG_NOSIGNAL);
++  if (sent == (ssize_t) size)
++    return TRUE;
++
++fail:
++  complete_error (self,
++                  g_error_new_literal (G_IO_ERROR, G_IO_ERROR_BROKEN_PIPE,
++                                       "fingerprint broker send failed"), TRUE);
++  return FALSE;
++}
++
++static gboolean
++append_username (guint8 *payload, gsize capacity, gsize *cursor,
++                 const gchar *username)
++{
++  gsize length;
++  if (!username)
++    return FALSE;
++  length = strlen (username);
++  if (length == 0 || length > T1FP_MAX_USERNAME ||
++      !g_utf8_validate (username, length, NULL) ||
++      *cursor + 1 + length > capacity)
++    return FALSE;
++  payload[(*cursor)++] = length;
++  memcpy (payload + *cursor, username, length);
++  *cursor += length;
++  return TRUE;
++}
++
++static void
++terminal_error (FpiDeviceT1bridge *self, guint8 outcome)
++{
++  GError *error;
++  gboolean disconnect = FALSE;
++
++  switch (outcome) {
++  case 5:
++    error = g_error_new_literal (G_IO_ERROR, G_IO_ERROR_CANCELLED,
++                                 "fingerprint operation cancelled");
++    break;
++  case 6:
++    error = device_error (FP_DEVICE_ERROR_REMOVED, "fingerprint device was removed");
++    disconnect = TRUE;
++    break;
++  case 7:
++    error = device_error (FP_DEVICE_ERROR_BUSY, "fingerprint broker is busy");
++    break;
++  case 8:
++    error = device_error (FP_DEVICE_ERROR_DATA_FULL,
++                          "fingerprint enrollment belongs to another account");
++    break;
++  case 9:
++    error = device_error (FP_DEVICE_ERROR_NOT_SUPPORTED,
++                          "fingerprint operation is unsupported");
++    break;
++  case 10:
++    error = device_error (FP_DEVICE_ERROR_GENERAL, "fingerprint operation failed");
++    break;
++  case 11:
++    error = device_error (FP_DEVICE_ERROR_DATA_DUPLICATE,
++                          "fingerprint is already enrolled");
++    break;
++  case 12:
++    error = device_error (FP_DEVICE_ERROR_DATA_FULL,
++                          "fingerprint storage is full");
++    break;
++  default:
++    error = device_error (FP_DEVICE_ERROR_PROTO, "fingerprint result is invalid");
++    disconnect = TRUE;
++    break;
++  }
++  complete_error (self, error, disconnect);
++}
++
++static void
++handle_terminal (FpiDeviceT1bridge *self, const guint8 *payload, gsize size)
++{
++  FpDevice *device = FP_DEVICE (self);
++  guint8 outcome;
++
++  if (size < 1)
++    goto invalid;
++  outcome = payload[0];
++  if (outcome == 1 && size == 1 && self->pending == P_DELETE) {
++    self->pending = P_IDLE;
++    fpi_device_delete_complete (device, NULL);
++    return;
++  }
++  if (outcome == 2 && size == 17 && self->pending == P_ENROLL && valid_id (payload + 1)) {
++    FpPrint *print = NULL;
++    fpi_device_get_enroll_data (device, &print);
++    set_print_id (print, payload + 1);
++    self->pending = P_IDLE;
++    self->cancel_sent = FALSE;
++    fpi_device_report_finger_status (device, FP_FINGER_STATUS_NONE);
++    fpi_device_enroll_complete (device, g_object_ref (print), NULL);
++    return;
++  }
++  if (outcome == 3 && size == 17 && valid_id (payload + 1)) {
++    if (self->pending == P_VERIFY &&
++        memcmp (payload + 1, self->expected_id, T1FP_ID_SIZE) == 0) {
++      self->pending = P_IDLE;
++      self->cancel_sent = FALSE;
++      fpi_device_report_finger_status (device, FP_FINGER_STATUS_NONE);
++      fpi_device_verify_report (device, FPI_MATCH_SUCCESS, NULL, NULL);
++      fpi_device_verify_complete (device, NULL);
++      return;
++    }
++    if (self->pending == P_IDENTIFY) {
++      GPtrArray *prints = NULL;
++      fpi_device_get_identify_data (device, &prints);
++      for (guint i = 0; i < prints->len; i++) {
++        FpPrint *print = g_ptr_array_index (prints, i);
++        guint8 id[T1FP_ID_SIZE];
++        if (print_id (print, id) && memcmp (id, payload + 1, sizeof (id)) == 0) {
++          self->pending = P_IDLE;
++          self->cancel_sent = FALSE;
++          fpi_device_report_finger_status (device, FP_FINGER_STATUS_NONE);
++          fpi_device_identify_report (device, print, NULL, NULL);
++          fpi_device_identify_complete (device, NULL);
++          return;
++        }
++      }
++    }
++    goto invalid;
++  }
++  if (outcome == 4 && size == 1 && self->pending == P_VERIFY) {
++    self->pending = P_IDLE;
++    self->cancel_sent = FALSE;
++    fpi_device_report_finger_status (device, FP_FINGER_STATUS_NONE);
++    fpi_device_verify_report (device, FPI_MATCH_FAIL, NULL, NULL);
++    fpi_device_verify_complete (device, NULL);
++    return;
++  }
++  if (outcome == 4 && size == 1 && self->pending == P_IDENTIFY) {
++    self->pending = P_IDLE;
++    self->cancel_sent = FALSE;
++    fpi_device_report_finger_status (device, FP_FINGER_STATUS_NONE);
++    fpi_device_identify_report (device, NULL, NULL, NULL);
++    fpi_device_identify_complete (device, NULL);
++    return;
++  }
++  if (outcome >= 5 && outcome <= 12 && size == 1 && self->pending != P_IDLE) {
++    terminal_error (self, outcome);
++    return;
++  }
++
++invalid:
++  complete_error (self, device_error (FP_DEVICE_ERROR_PROTO,
++                                      "fingerprint terminal packet is invalid"), TRUE);
++}
++
++static void
++handle_list (FpiDeviceT1bridge *self, const guint8 *payload, gsize size)
++{
++  g_autoptr(GPtrArray) prints = g_ptr_array_new_with_free_func (g_object_unref);
++  T1bridgeIdentityList list;
++
++  if (self->pending != P_LIST ||
++      !t1bridge_identities_parse (payload, size, self->max_identities, &list))
++    goto invalid;
++  for (guint i = 0; i < list.count; i++)
++    g_ptr_array_add (prints, g_object_ref_sink (new_print (self, list.username,
++                                                           list.identities[i].finger,
++                                                           list.identities[i].id)));
++  self->pending = P_IDLE;
++  fpi_device_list_complete (FP_DEVICE (self), g_steal_pointer (&prints), NULL);
++  return;
++
++invalid:
++  complete_error (self, device_error (FP_DEVICE_ERROR_PROTO,
++                                      "fingerprint identity list is invalid"), TRUE);
++}
++
++static void
++handle_packet (FpiDeviceT1bridge *self, const guint8 *packet, gsize size)
++{
++  T1bridgePacket parsed;
++
++  if (!t1bridge_packet_parse (packet, size, &parsed))
++    goto invalid;
++
++  if (parsed.type == S_CAPS && self->pending == P_CAPS && parsed.payload_size == 4) {
++    guint caps = ((guint) parsed.payload[0] << 8) | parsed.payload[1];
++    if (caps != T1FP_REQUIRED_CAPS || parsed.payload[2] == 0 || parsed.payload[2] > 100 ||
++        parsed.payload[3] == 0 || parsed.payload[3] > T1FP_MAX_IDENTITIES)
++      goto invalid;
++    fpi_device_set_nr_enroll_stages (FP_DEVICE (self), parsed.payload[2]);
++    self->max_identities = parsed.payload[3];
++    self->pending = P_OPEN;
++    send_packet (self, C_OPEN, NULL, 0);
++    return;
++  }
++  if (parsed.type == S_OPENED && self->pending == P_OPEN && parsed.payload_size == 0) {
++    self->pending = P_IDLE;
++    fpi_device_open_complete (FP_DEVICE (self), NULL);
++    return;
++  }
++  if (parsed.type == S_IDENTITIES) {
++    handle_list (self, parsed.payload, parsed.payload_size);
++    return;
++  }
++  if (parsed.type == S_PROGRESS && self->pending == P_ENROLL &&
++      parsed.payload_size == 2 && parsed.payload[0] > 0 &&
++      parsed.payload[0] <= parsed.payload[1] &&
++      parsed.payload[1] == fp_device_get_nr_enroll_stages (FP_DEVICE (self))) {
++    fpi_device_enroll_progress (FP_DEVICE (self), parsed.payload[0], NULL, NULL);
++    return;
++  }
++  if (parsed.type == S_TERMINAL) {
++    handle_terminal (self, parsed.payload, parsed.payload_size);
++    return;
++  }
++
++invalid:
++  complete_error (self, device_error (FP_DEVICE_ERROR_PROTO,
++                                      "fingerprint broker packet is invalid"), TRUE);
++}
++
++static gboolean
++read_ready (gint fd, GIOCondition condition, gpointer user_data)
++{
++  FpiDeviceT1bridge *self = user_data;
++  guint8 packet[T1FP_MAX_PACKET];
++  ssize_t received;
++
++  if (fd != self->fd || condition & (G_IO_ERR | G_IO_HUP))
++    goto disconnected;
++  for (;;) {
++    received = recv (fd, packet, sizeof (packet), MSG_DONTWAIT | MSG_TRUNC);
++    if (received < 0 && errno == EAGAIN)
++      return G_SOURCE_CONTINUE;
++    if (received <= 0)
++      goto disconnected;
++    if (received > (ssize_t) sizeof (packet)) {
++      complete_error (self, device_error (FP_DEVICE_ERROR_PROTO,
++                                          "fingerprint broker packet is oversized"), TRUE);
++      return G_SOURCE_REMOVE;
++    }
++    handle_packet (self, packet, received);
++    if (self->fd < 0)
++      return G_SOURCE_REMOVE;
++  }
++
++disconnected:
++  complete_error (self,
++                  g_error_new_literal (G_IO_ERROR, G_IO_ERROR_CONNECTION_CLOSED,
++                                       "fingerprint broker connection closed"), TRUE);
++  return G_SOURCE_REMOVE;
++}
++
++static gboolean
++finish_connect (FpiDeviceT1bridge *self)
++{
++  struct ucred peer;
++  socklen_t peer_size = sizeof (peer);
++
++  if (getsockopt (self->fd, SOL_SOCKET, SO_PEERCRED, &peer, &peer_size) < 0 ||
++      peer_size != sizeof (peer) || peer.uid != 0) {
++    complete_error (self,
++                    g_error_new_literal (G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED,
++                                         "fingerprint broker peer is not root"), TRUE);
++    return FALSE;
++  }
++  self->read_source = g_unix_fd_source_new (self->fd, G_IO_IN | G_IO_ERR | G_IO_HUP);
++  g_source_set_callback (self->read_source, G_SOURCE_FUNC (read_ready), self, NULL);
++  g_source_attach (self->read_source, g_main_context_get_thread_default ());
++  return send_packet (self, C_CAPS, NULL, 0);
++}
++
++static gboolean
++connect_ready (gint fd, GIOCondition condition, gpointer user_data)
++{
++  FpiDeviceT1bridge *self = user_data;
++  gint socket_error = 0;
++  socklen_t error_size = sizeof (socket_error);
++
++  if (self->connect_source) {
++    g_source_destroy (self->connect_source);
++    g_clear_pointer (&self->connect_source, g_source_unref);
++  }
++  if (fd != self->fd || condition & (G_IO_ERR | G_IO_HUP) ||
++      getsockopt (fd, SOL_SOCKET, SO_ERROR, &socket_error, &error_size) < 0 ||
++      socket_error != 0) {
++    complete_error (self,
++                    g_error_new_literal (G_IO_ERROR, G_IO_ERROR_CONNECTION_REFUSED,
++                                         "fingerprint broker connection failed"), TRUE);
++    return G_SOURCE_REMOVE;
++  }
++  finish_connect (self);
++  return G_SOURCE_REMOVE;
++}
++
++static void
++t1bridge_open (FpDevice *device)
++{
++  FpiDeviceT1bridge *self = FPI_DEVICE_T1BRIDGE (device);
++  struct sockaddr_un address = { 0 };
++  gint result;
++
++  close_connection (self);
++  self->pending = P_CAPS;
++  self->fd = socket (AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
++  if (self->fd < 0)
++    goto failed;
++  address.sun_family = AF_UNIX;
++  g_strlcpy (address.sun_path, T1BRIDGE_BROKER_PATH, sizeof (address.sun_path));
++  result = connect (self->fd, (struct sockaddr *) &address,
++                    offsetof (struct sockaddr_un, sun_path) + strlen (address.sun_path) + 1);
++  if (result == 0) {
++    finish_connect (self);
++    return;
++  }
++  if (errno == EINPROGRESS || errno == EAGAIN) {
++    self->connect_source = g_unix_fd_source_new (self->fd, G_IO_OUT | G_IO_ERR | G_IO_HUP);
++    g_source_set_callback (self->connect_source, G_SOURCE_FUNC (connect_ready), self, NULL);
++    g_source_attach (self->connect_source, g_main_context_get_thread_default ());
++    return;
++  }
++
++failed:
++  complete_error (self,
++                  g_error_new_literal (G_IO_ERROR, G_IO_ERROR_CONNECTION_REFUSED,
++                                       "fingerprint broker connection failed"), TRUE);
++}
++
++static void
++t1bridge_close (FpDevice *device)
++{
++  FpiDeviceT1bridge *self = FPI_DEVICE_T1BRIDGE (device);
++  self->pending = P_IDLE;
++  close_connection (self);
++  fpi_device_close_complete (device, NULL);
++}
++
++static gboolean
++begin (FpiDeviceT1bridge *self, Pending pending)
++{
++  self->pending = pending;
++  self->cancel_sent = FALSE;
++  if (self->fd >= 0)
++    return TRUE;
++  complete_error (self, device_error (FP_DEVICE_ERROR_GENERAL,
++                                      "fingerprint broker is unavailable"), FALSE);
++  return FALSE;
++}
++
++static void
++t1bridge_list (FpDevice *device)
++{
++  FpiDeviceT1bridge *self = FPI_DEVICE_T1BRIDGE (device);
++  if (begin (self, P_LIST))
++    send_packet (self, C_LIST, NULL, 0);
++}
++
++static void
++t1bridge_enroll (FpDevice *device)
++{
++  FpiDeviceT1bridge *self = FPI_DEVICE_T1BRIDGE (device);
++  FpPrint *print = NULL;
++  guint8 payload[257];
++  gsize cursor = 0;
++  FpFinger finger;
++
++  fpi_device_get_enroll_data (device, &print);
++  finger = fp_print_get_finger (print);
++  if (!append_username (payload, sizeof (payload), &cursor, fp_print_get_username (print)) ||
++      finger < FP_FINGER_FIRST || finger > FP_FINGER_LAST) {
++    fpi_device_enroll_complete (device, NULL, device_error (FP_DEVICE_ERROR_DATA_INVALID,
++                                                            "fingerprint metadata is invalid"));
++    return;
++  }
++  payload[cursor++] = finger;
++  if (begin (self, P_ENROLL)) {
++    fpi_device_report_finger_status (device, FP_FINGER_STATUS_NEEDED);
++    send_packet (self, C_ENROLL, payload, cursor);
++  }
++}
++
++static void
++t1bridge_verify (FpDevice *device)
++{
++  FpiDeviceT1bridge *self = FPI_DEVICE_T1BRIDGE (device);
++  FpPrint *print = NULL;
++  guint8 payload[272];
++  gsize cursor = 0;
++
++  fpi_device_get_verify_data (device, &print);
++  if (!append_username (payload, sizeof (payload), &cursor, fp_print_get_username (print)) ||
++      !print_id (print, self->expected_id)) {
++    fpi_device_verify_complete (device, device_error (FP_DEVICE_ERROR_DATA_INVALID,
++                                                       "fingerprint print is invalid"));
++    return;
++  }
++  memcpy (payload + cursor, self->expected_id, T1FP_ID_SIZE);
++  cursor += T1FP_ID_SIZE;
++  if (begin (self, P_VERIFY)) {
++    fpi_device_report_finger_status (device, FP_FINGER_STATUS_NEEDED);
++    send_packet (self, C_VERIFY, payload, cursor);
++  }
++}
++
++static void
++t1bridge_identify (FpDevice *device)
++{
++  FpiDeviceT1bridge *self = FPI_DEVICE_T1BRIDGE (device);
++  GPtrArray *prints = NULL;
++  guint8 payload[256];
++  gsize cursor = 0;
++  const gchar *username;
++
++  fpi_device_get_identify_data (device, &prints);
++  if (prints->len == 0) {
++    fpi_device_identify_report (device, NULL, NULL, NULL);
++    fpi_device_identify_complete (device, NULL);
++    return;
++  }
++  username = fp_print_get_username (g_ptr_array_index (prints, 0));
++  if (!append_username (payload, sizeof (payload), &cursor, username))
++    goto invalid;
++  for (guint i = 0; i < prints->len; i++) {
++    FpPrint *print = g_ptr_array_index (prints, i);
++    guint8 id[T1FP_ID_SIZE];
++    if (g_strcmp0 (username, fp_print_get_username (print)) || !print_id (print, id))
++      goto invalid;
++  }
++  if (begin (self, P_IDENTIFY)) {
++    fpi_device_report_finger_status (device, FP_FINGER_STATUS_NEEDED);
++    send_packet (self, C_IDENTIFY, payload, cursor);
++  }
++  return;
++
++invalid:
++  fpi_device_identify_complete (device, device_error (FP_DEVICE_ERROR_DATA_INVALID,
++                                                       "fingerprint gallery is invalid"));
++}
++
++static void
++t1bridge_delete (FpDevice *device)
++{
++  FpiDeviceT1bridge *self = FPI_DEVICE_T1BRIDGE (device);
++  FpPrint *print = NULL;
++  guint8 payload[272], id[T1FP_ID_SIZE];
++  gsize cursor = 0;
++
++  fpi_device_get_delete_data (device, &print);
++  if (!append_username (payload, sizeof (payload), &cursor, fp_print_get_username (print)) ||
++      !print_id (print, id)) {
++    fpi_device_delete_complete (device, device_error (FP_DEVICE_ERROR_DATA_INVALID,
++                                                       "fingerprint print is invalid"));
++    return;
++  }
++  memcpy (payload + cursor, id, sizeof (id));
++  cursor += sizeof (id);
++  if (begin (self, P_DELETE))
++    send_packet (self, C_DELETE, payload, cursor);
++}
++
++static void
++t1bridge_cancel (FpDevice *device)
++{
++  FpiDeviceT1bridge *self = FPI_DEVICE_T1BRIDGE (device);
++  if (self->fd < 0 || self->pending < P_LIST || self->cancel_sent)
++    return;
++  self->cancel_sent = TRUE;
++  send_packet (self, C_CANCEL, NULL, 0);
++}
++
++static void
++fpi_device_t1bridge_finalize (GObject *object)
++{
++  close_connection (FPI_DEVICE_T1BRIDGE (object));
++  G_OBJECT_CLASS (fpi_device_t1bridge_parent_class)->finalize (object);
++}
++
++static void
++fpi_device_t1bridge_init (FpiDeviceT1bridge *self)
++{
++  self->fd = -1;
++}
++
++static void
++fpi_device_t1bridge_class_init (FpiDeviceT1bridgeClass *klass)
++{
++  FpDeviceClass *device_class = FP_DEVICE_CLASS (klass);
++  GObjectClass *object_class = G_OBJECT_CLASS (klass);
++
++  object_class->finalize = fpi_device_t1bridge_finalize;
++  device_class->id = "t1bridge";
++  device_class->full_name = "Apple Touch ID";
++  device_class->type = FP_DEVICE_TYPE_USB_PRESENCE;
++  device_class->id_table = id_table;
++  device_class->nr_enroll_stages = 100;
++  device_class->scan_type = FP_SCAN_TYPE_PRESS;
++  device_class->temp_hot_seconds = -1;
++  device_class->open = t1bridge_open;
++  device_class->close = t1bridge_close;
++  device_class->list = t1bridge_list;
++  device_class->enroll = t1bridge_enroll;
++  device_class->verify = t1bridge_verify;
++  device_class->identify = t1bridge_identify;
++  device_class->delete = t1bridge_delete;
++  device_class->cancel = t1bridge_cancel;
++  fpi_device_class_auto_initialize_features (device_class);
++  device_class->features |= FP_DEVICE_FEATURE_DUPLICATES_CHECK;
++}
+diff --git a/libfprint/drivers/virtual-device-storage.c b/libfprint/drivers/virtual-device-storage.c
+index 0f5a4b3..c740822 100644
+--- a/libfprint/drivers/virtual-device-storage.c
++++ b/libfprint/drivers/virtual-device-storage.c
+@@ -258,6 +258,7 @@ fpi_device_virtual_device_storage_finalize (GObject *object)
+ static const FpIdEntry driver_ids[] = {
+   { .virtual_envvar = "FP_VIRTUAL_DEVICE_STORAGE", .driver_data = 0 },
+   { .virtual_envvar = "FP_VIRTUAL_DEVICE_STORAGE_NO_LIST", .driver_data = FP_DEVICE_FEATURE_STORAGE_LIST },
++  { .virtual_envvar = "FP_VIRTUAL_DEVICE_STORAGE_NO_DUPLICATES_CHECK", .driver_data = FP_DEVICE_FEATURE_DUPLICATES_CHECK },
+   { .virtual_envvar = NULL }
+ };
+ 
+diff --git a/libfprint/fp-context.c b/libfprint/fp-context.c
+index ccb4f16..9faeb7c 100644
+--- a/libfprint/fp-context.c
++++ b/libfprint/fp-context.c
+@@ -22,6 +22,7 @@
+ 
+ #include "fpi-context.h"
+ #include "fpi-device.h"
++#include "fp-device-private.h"
+ #include <gusb.h>
+ #include <stdio.h>
+ 
+@@ -223,7 +224,8 @@ usb_device_added_cb (FpContext *self, GUsbDevice *device, GUsbContext *usb_ctx)
+       g_autoptr(FpDeviceClass) cls = g_type_class_ref (driver);
+       const FpIdEntry *entry;
+ 
+-      if (cls->type != FP_DEVICE_TYPE_USB)
++      if (cls->type != FP_DEVICE_TYPE_USB &&
++          cls->type != FP_DEVICE_TYPE_USB_PRESENCE)
+         continue;
+ 
+       for (entry = cls->id_table; entry->pid; entry++)
+@@ -233,7 +235,7 @@ usb_device_added_cb (FpContext *self, GUsbDevice *device, GUsbContext *usb_ctx)
+           if (entry->pid != pid || entry->vid != vid)
+             continue;
+ 
+-          if (cls->usb_discover)
++          if (cls->type == FP_DEVICE_TYPE_USB && cls->usb_discover)
+             driver_score = cls->usb_discover (device);
+ 
+           /* Is this driver better than the one we had? */
+@@ -275,11 +277,11 @@ usb_device_removed_cb (FpContext *self, GUsbDevice *device, GUsbContext *usb_ctx
+       FpDevice *dev = g_ptr_array_index (priv->devices, i);
+       FpDeviceClass *cls = FP_DEVICE_GET_CLASS (dev);
+ 
+-      if (cls->type != FP_DEVICE_TYPE_USB)
++      if (cls->type != FP_DEVICE_TYPE_USB &&
++          cls->type != FP_DEVICE_TYPE_USB_PRESENCE)
+         continue;
+ 
+-      if (fpi_device_get_usb_device (dev) == device)
+-        fpi_device_remove (dev);
++      fpi_device_remove_if_matches_usb_device (dev, device);
+     }
+ }
+ 
+diff --git a/libfprint/fp-device-private.h b/libfprint/fp-device-private.h
+index 1c3702f..4717243 100644
+--- a/libfprint/fp-device-private.h
++++ b/libfprint/fp-device-private.h
+@@ -132,5 +132,9 @@ void fpi_device_resume (FpDevice *device);
+ 
+ void fpi_device_configure_wakeup (FpDevice *device,
+                                   gboolean  enabled);
++/* Internal: hidden so libfprint-tod does not export it as ABI. */
++G_GNUC_INTERNAL
++gboolean fpi_device_remove_if_matches_usb_device (FpDevice  *device,
++                                                  GUsbDevice *usb_device);
+ void fpi_device_update_temp (FpDevice *device,
+                              gboolean  is_active);
+diff --git a/libfprint/fp-device.c b/libfprint/fp-device.c
+index 6040c1b..ba24f06 100644
+--- a/libfprint/fp-device.c
++++ b/libfprint/fp-device.c
+@@ -287,7 +287,10 @@ fp_device_get_property (GObject    *object,
+       break;
+ 
+     case PROP_FPI_USB_DEVICE:
+-      g_value_set_object (value, priv->usb_device);
++      if (cls->type == FP_DEVICE_TYPE_USB)
++        g_value_set_object (value, priv->usb_device);
++      else
++        g_value_set_object (value, NULL);
+       break;
+ 
+     case PROP_FPI_UDEV_DATA_SPIDEV:
+@@ -330,7 +333,8 @@ fp_device_set_property (GObject      *object,
+       break;
+ 
+     case PROP_FPI_USB_DEVICE:
+-      if (cls->type == FP_DEVICE_TYPE_USB)
++      if (cls->type == FP_DEVICE_TYPE_USB ||
++          cls->type == FP_DEVICE_TYPE_USB_PRESENCE)
+         priv->usb_device = g_value_dup_object (value);
+       else
+         g_assert (g_value_get_object (value) == NULL);
+@@ -851,14 +855,10 @@ fp_device_open (FpDevice           *device,
+         }
+       break;
+ 
++    case FP_DEVICE_TYPE_USB_PRESENCE:
+     case FP_DEVICE_TYPE_VIRTUAL:
+     case FP_DEVICE_TYPE_UDEV:
+       break;
+-
+-    default:
+-      g_assert_not_reached ();
+-      g_task_return_error (task, fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+-      return;
+     }
+ 
+   priv->current_action = FPI_DEVICE_ACTION_OPEN;
+diff --git a/libfprint/fp-device.h b/libfprint/fp-device.h
+index 5410891..4dfa5d9 100644
+--- a/libfprint/fp-device.h
++++ b/libfprint/fp-device.h
+@@ -40,11 +40,15 @@ G_DECLARE_DERIVABLE_TYPE (FpDevice, fp_device, FP, DEVICE, GObject)
+  * @FP_DEVICE_TYPE_VIRTUAL: The device is a virtual device
+  * @FP_DEVICE_TYPE_UDEV: The device is a udev device
+  * @FP_DEVICE_TYPE_USB: The device is a USB device
++ * @FP_DEVICE_TYPE_USB_PRESENCE: USB presence identifies the device, but
++ *   libfprint and the driver must not operate on the USB device
+  */
+ typedef enum {
+   FP_DEVICE_TYPE_VIRTUAL,
+   FP_DEVICE_TYPE_USB,
+   FP_DEVICE_TYPE_UDEV,
++  /* Appended last: keeps the libfprint-tod ABI of the existing values. */
++  FP_DEVICE_TYPE_USB_PRESENCE,
+ } FpDeviceType;
+ 
+ /**
+diff --git a/libfprint/fpi-device.c b/libfprint/fpi-device.c
+index f6a2749..41f8b4e 100644
+--- a/libfprint/fpi-device.c
++++ b/libfprint/fpi-device.c
+@@ -50,6 +50,22 @@ fp_device_get_instance_private (FpDevice *self)
+                             g_type_class_get_instance_private_offset (dev_class));
+ }
+ 
++gboolean
++fpi_device_remove_if_matches_usb_device (FpDevice  *device,
++                                         GUsbDevice *usb_device)
++{
++  FpDevicePrivate *priv = fp_device_get_instance_private (device);
++
++  g_return_val_if_fail (FP_IS_DEVICE (device), FALSE);
++  g_return_val_if_fail (G_USB_IS_DEVICE (usb_device), FALSE);
++
++  if (priv->usb_device != usb_device)
++    return FALSE;
++
++  fpi_device_remove (device);
++  return TRUE;
++}
++
+ /**
+  * fpi_device_emulation_mode_enabled:
+  * @device: The #FpDevice to check
+@@ -1249,15 +1265,10 @@ fpi_device_close_complete (FpDevice *device, GError *error)
+         }
+       break;
+ 
++    case FP_DEVICE_TYPE_USB_PRESENCE:
+     case FP_DEVICE_TYPE_VIRTUAL:
+     case FP_DEVICE_TYPE_UDEV:
+       break;
+-
+-    default:
+-      g_assert_not_reached ();
+-      fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR,
+-                                      fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+-      return;
+     }
+ 
+   if (!error)
+@@ -1784,15 +1795,10 @@ fpi_device_configure_wakeup (FpDevice *device, gboolean enabled)
+         break;
+       }
+ 
++    case FP_DEVICE_TYPE_USB_PRESENCE:
+     case FP_DEVICE_TYPE_VIRTUAL:
+     case FP_DEVICE_TYPE_UDEV:
+       break;
+-
+-    default:
+-      g_assert_not_reached ();
+-      fpi_device_return_task_in_idle (device, FP_DEVICE_TASK_RETURN_ERROR,
+-                                      fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+-      return;
+     }
+ }
+ 
+diff --git a/libfprint/fprint-list-supported-devices.c b/libfprint/fprint-list-supported-devices.c
+index 1b02c0b..3a22d2d 100644
+--- a/libfprint/fprint-list-supported-devices.c
++++ b/libfprint/fprint-list-supported-devices.c
+@@ -44,6 +44,7 @@ insert_drivers (GList **usb_list, GList **spi_list)
+       switch (cls->type)
+         {
+         case FP_DEVICE_TYPE_USB:
++        case FP_DEVICE_TYPE_USB_PRESENCE:
+ 
+           for (entry = cls->id_table; entry->vid; entry++)
+             {
+@@ -93,7 +94,6 @@ insert_drivers (GList **usb_list, GList **spi_list)
+           break;
+ 
+         case FP_DEVICE_TYPE_VIRTUAL:
+-        default:
+           break;
+         }
+     }
+diff --git a/libfprint/meson.build b/libfprint/meson.build
+index 59040cb..030ef25 100644
+--- a/libfprint/meson.build
++++ b/libfprint/meson.build
+@@ -88,6 +88,7 @@ nbis_sources = [
+ ]
+ 
+ driver_sources = {
++    't1bridge': files('drivers/t1bridge.c', 'drivers/t1bridge-protocol.c'),
+     'upekts': files(
+         'drivers/upekts.c',
+         'drivers/upek_proto.c',
+diff --git a/meson.build b/meson.build
+index 15c2d9f..766dd0f 100644
+--- a/meson.build
++++ b/meson.build
+@@ -45,7 +45,7 @@ common_cflags = cc.get_supported_arguments([
+     '-Wmissing-noreturn',
+     '-Wpointer-arith',
+     '-Wshadow',
+-    '-Wswitch-enum',
++    '-Werror=switch-enum',
+     '-Wtype-limits',
+     '-Wundef',
+     '-Wunused',
+@@ -117,6 +117,7 @@ virtual_drivers = [
+     'virtual_sdcp',
+ ]
+ default_drivers = [
++    't1bridge',
+     'upektc_img',
+     'vfs5011',
+     'vfs7552',
+@@ -160,6 +161,7 @@ endif
+ # FIXME: All the drivers should be fixed by adjusting the byte order.
+ # See https://gitlab.freedesktop.org/libfprint/libfprint/-/issues/236
+ endian_independent_drivers = virtual_drivers + [
++    't1bridge',
+     'aes1610',
+     'aes1660',
+     'aes2550',

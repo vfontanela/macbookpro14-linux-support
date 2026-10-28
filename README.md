@@ -8,7 +8,8 @@ Linux support documentation and packages for the 2017 13-inch **MacBookPro14,x**
 |---|---|---|---|
 | Internal audio | Cirrus CS8409 with `snd_hda_macbookpro` DKMS | Cirrus CS8409 with `snd_hda_macbookpro` DKMS | [audio/README.md](audio/README.md) |
 | Wi-Fi | BCM4350 `[14e4:43a3]`; `brcmfmac-bcm4350-dfs/1.0` DKMS for DFS UNII-2e | BCM43602 `[14e4:43ba]`; complete calibrated board NVRAM | [wifi/README.md](wifi/README.md) |
-| Touch Bar / ambient light sensor | Not present; standard function-key row | T1 iBridge with `mbp-t1-touchbar` DKMS | [touchbar/README.md](touchbar/README.md) |
+| Touch Bar / ambient light sensor | Not present; standard function-key row | T1 iBridge with `mbp-t1-touchbar` DKMS, **or** T1Bridge (below) | [touchbar/README.md](touchbar/README.md) |
+| Touch ID fingerprint reader | Not present | T1Bridge: Touch ID **and** Touch Bar; replaces `mbp-t1-touchbar` (experimental) | [touchid/README.md](touchid/README.md) |
 | Camera / FaceTime HD | PCIe `14e4:1570`: separate facetimehd DKMS package; user-confirmed working camera | USB iBridge / `uvcvideo` observed on the development Mac; no PCIe package needed | [camera/README.md](camera/README.md) |
 
 ## Tested configurations
@@ -18,6 +19,7 @@ Linux support documentation and packages for the 2017 13-inch **MacBookPro14,x**
 | MacBookPro14,1 | Fedora 44, kernel 7.1.12 | CS8409 audio; BCM4350 2.4/5 GHz, including DFS channel 116 with patched `brcmfmac` |
 | MacBookPro14,1 | Fedora 44, kernel 7.2.5 | BCM4350 Wi-Fi requires `pcie_aspm=off` on the kernel command line (PCIe ASPM probe regression, unrelated to the DFS DKMS package); see [wifi/BCM4350-PCIe-ASPM-kernel7.2.5.md](wifi/BCM4350-PCIe-ASPM-kernel7.2.5.md) |
 | MacBookPro14,2 | Fedora 44, kernel 7.1.10 | CS8409 audio; BCM43602 2.4/5 GHz; T1 Touch Bar and ambient light sensor |
+| MacBookPro14,2 | Fedora 45, kernel 7.2.11 | T1Bridge: Touch Bar, Touch ID enrollment/verification, sudo with fingerprint and password |
 | MacBookPro14,2 | Ubuntu / Kubuntu | Existing Debian package workflows for audio and Touch Bar; board-specific BCM43602 NVRAM |
 
 ## Fedora 44 highlights
@@ -54,6 +56,15 @@ checkout installer also completes setup automatically; see [camera/README.md](ca
 **MacBookPro14,2 (A1706):** keep the USB iBridge camera's `uvcvideo` support;
 install the separate Touch Bar package if needed. Do not install facetimehd on
 this model's USB camera. Both package families reject absent PCIe hardware.
+
+**Touch ID (MacBookPro14,2 and other T1 Touch Bar models):** use
+[touchid/](touchid/README.md) *instead of* the Touch Bar package. The T1 can
+expose either the legacy Touch Bar mode or the Secure Enclave, not both, so
+T1Bridge drives the Touch Bar itself and the two cannot be installed together.
+It is experimental: Fedora 45 was tested on hardware, while the Debian 13 and
+Ubuntu 26.04 packages were only tested in containers. Back up
+`EFI/APPLE/EMBEDDEDOS/FDRData` first. Build with
+`bash touchid/build.sh /absolute/output/path` (requires podman or docker).
 
 The user confirmed FaceTime HD had already worked on the 14,1 and accepted
 release without repeating all hardware tests. This packaged snapshot passed

@@ -5,6 +5,11 @@ MacBook Pro models with the **T1** co-processor.
 
 MacBookPro14,1 has a physical function-key row and no Touch Bar, so this package is not applicable to that model. MacBookPro14,2 is the supported 13-inch 2017 Touch Bar model.
 
+> **Want Touch ID?** This driver keeps the T1 in a USB configuration without
+> the Secure Enclave, so Touch ID cannot work with it. Use
+> [../touchid/](../touchid/README.md) (T1Bridge) instead: it drives the Touch Bar
+> as well and replaces this package. Do not install both.
+
 Validated on:
 
 | Model | Distribution | Kernel | Result |
