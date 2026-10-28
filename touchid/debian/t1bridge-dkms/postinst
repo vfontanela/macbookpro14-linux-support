@@ -1,0 +1,50 @@
+#!/bin/sh
+set -e
+NAME=t1bridge-dkms
+VERSION=@VERSION@
+
+regen_initramfs() { # kernel version
+	if command -v dracut >/dev/null 2>&1 && dpkg-query -W -f='${Status}' dracut 2>/dev/null | grep -q 'ok installed'; then
+		dracut --force --kver "$1"
+	else
+		update-initramfs -u -k "$1"
+	fi
+}
+
+in_initramfs() { # kernel version
+	if command -v lsinitrd >/dev/null 2>&1; then
+		lsinitrd --kver "$1" 2>/dev/null | grep -q t1_cfgsel
+	else
+		lsinitramfs "/boot/initrd.img-$1" 2>/dev/null | grep -q t1_cfgsel
+	fi
+}
+
+if [ "$1" = configure ]; then
+	# Drop registrations of other versions (upgrades keep the tree registered).
+	for old in $(dkms status -m "$NAME" 2>/dev/null | sed -n "s,^$NAME/\([^,:]*\).*,\1,p" | sort -u); do
+		[ "$old" = "$VERSION" ] || dkms remove -m "$NAME" -v "$old" --all >/dev/null 2>&1 || true
+	done
+	dkms add -m "$NAME" -v "$VERSION" >/dev/null 2>&1 || true
+	running=$(uname -r)
+	failed=0
+	for build in /lib/modules/*/build; do
+		[ -e "$build" ] || continue
+		kver=$(basename "$(dirname "$build")")
+		if ! dkms install -m "$NAME" -v "$VERSION" -k "$kver" --force >/dev/null; then
+			echo "$NAME: ERROR: module build failed for kernel $kver (see dkms status and /var/lib/dkms/$NAME/$VERSION/build/make.log)" >&2
+			failed=1; continue
+		fi
+		regen_initramfs "$kver" || { echo "$NAME: ERROR: initramfs update failed for $kver" >&2; failed=1; }
+	done
+	# Failures are reported, not hidden: without the module and t1_cfgsel in the
+	# initramfs the Touch Bar stays dark and Touch ID is unavailable after reboot.
+	if [ ! -e "/lib/modules/$running/build" ]; then
+		echo "$NAME: ERROR: linux-headers-$running is not installed" >&2
+		failed=1
+	elif ! in_initramfs "$running"; then
+		echo "$NAME: ERROR: t1_cfgsel is missing from the initramfs of $running" >&2
+		failed=1
+	fi
+	[ "$failed" -eq 0 ] || exit 1
+fi
+exit 0
