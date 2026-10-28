@@ -167,7 +167,8 @@ if [[ -z ${SKIP_FPRINT:-} ]]; then
   rebuild fprintd /src/packaging/arch/fprintd-t1bridge/0001-Honor-driver-native-duplicate-detection.patch
 fi
 
-cp $pkgdir/install.sh /out/$TARGET/
+# Mode 755 even when this checkout lost the executable bit (web upload).
+install -m 755 $pkgdir/install.sh /out/$TARGET/
 ( cd /out/$TARGET && sha256sum ./*.deb > SHA256SUMS )
 echo "DEBS OK: $TARGET"
 ls -1 /out/$TARGET
