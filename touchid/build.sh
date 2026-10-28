@@ -33,7 +33,7 @@ for target in "${targets[@]}"; do
   case $target in
     fedora-*)
       FEDORA=${target#fedora-} bash "$work/t1bridge/packaging/fedora/build-container.sh" "$out/rpm/$target"
-      cp "$here/fedora/install.sh" "$out/rpm/$target/" ;;
+      install -m 755 "$here/fedora/install.sh" "$out/rpm/$target/" ;;
     debian-*|ubuntu-*)
       bash "$work/t1bridge/packaging/debian/build.sh" "$out/deb" "$target" ;;
     *) echo "unknown target: $target" >&2; exit 1 ;;
