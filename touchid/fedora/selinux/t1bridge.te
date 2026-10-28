@@ -1,0 +1,20 @@
+policy_module(t1bridge, 1.0)
+
+# Service executables live in /usr/lib/t1bridge, which the base policy labels
+# lib_t. systemd does not transition on lib_t, so they would run as init_t and
+# be denied the T1's hidraw/usbfs nodes (usb_device_t). t1bridge.fc labels
+# them bin_t so they run as unconfined_service_t like other packaged services.
+
+# The patched libfprint loaded by the confined fprintd daemon connects to the
+# root-only SOCK_SEQPACKET socket /run/t1bridge/fingerprint.sock. systemd
+# creates it (socket activation) and hands it to t1-touchid-auth.
+gen_require(`
+	type fprintd_t;
+	type init_t;
+	type unconfined_service_t;
+	type var_run_t;
+')
+
+allow fprintd_t var_run_t:dir search_dir_perms;
+allow fprintd_t var_run_t:sock_file write_sock_file_perms;
+allow fprintd_t { init_t unconfined_service_t }:unix_stream_socket connectto;
