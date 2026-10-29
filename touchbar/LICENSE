@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: mbp-t1-touchbar-driver
 Source: https://github.com/parport0/mbp-t1-touchbar-driver
-Original-Author: Ronald Tschalar <[email protected]>
+Original-Author: Ronald Tschalar <ronald@innovation.ch>
  (posted upstream: https://lore.kernel.org/lkml/20190612083400.1015-1-ronald@innovation.ch/)
 
 Files: *

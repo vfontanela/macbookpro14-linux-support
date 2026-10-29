@@ -1,79 +1,37 @@
 #!/bin/bash
-# build.sh - assembles the .deb package from this repo's source tree.
-#
-# Usage: ./build.sh [version]
-#   version defaults to 1.0-3 (Debian package version; the DKMS module
-#   version itself is set independently in src/dkms.conf)
+# Build mbp-t1-touchbar-dkms (.rpm and .deb).
+#   bash touchbar/build.sh OUTDIR        needs rpmbuild, dpkg-deb
 set -euo pipefail
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+out=$(realpath -m "$1")
+version=1.0 release=4 modname=mbp-t1-touchbar modver=0.3
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$out"
 
-VERSION="${1:-1.0-3}"
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="$(mktemp -d)"
-PKGROOT="$BUILD_DIR/pkgroot"
-MOD_VERSION="0.3"   # must match PACKAGE_VERSION in src/dkms.conf
-MOD_NAME="mbp-t1-touchbar"
+# RPM
+mkdir -p "$work/rpm"/{BUILD,RPMS,SOURCES,SPECS,SRPMS} "$work/$modname-$modver"
+cp -a "$here"/{src,scripts,systemd,udev,modprobe.d,modules-load.d,README.md,CHANGELOG.md,LICENSE} "$work/$modname-$modver/"
+tar -czf "$work/rpm/SOURCES/$modname-$modver.tar.gz" -C "$work" "$modname-$modver"
+rpmbuild -bb --quiet --define "_topdir $work/rpm" --define "dist %{nil}" "$here/rpm/$modname-dkms.spec"
+cp "$work"/rpm/RPMS/noarch/*.rpm "$out/"
 
-trap 'rm -rf "$BUILD_DIR"' EXIT
-
-echo "==> Assembling package tree in $PKGROOT"
-mkdir -p "$PKGROOT"/DEBIAN
-mkdir -p "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/linux"
-mkdir -p "$PKGROOT"/etc/modprobe.d
-mkdir -p "$PKGROOT"/etc/modules-load.d
-mkdir -p "$PKGROOT"/etc/udev/rules.d
-mkdir -p "$PKGROOT"/lib/systemd/system
-mkdir -p "$PKGROOT/usr/libexec/${MOD_NAME}"
-mkdir -p "$PKGROOT/usr/share/doc/${MOD_NAME}-dkms"
-
-# kernel module source
-cp "$ROOT_DIR"/src/{apple-ibridge.c,apple-ib-tb.c,apple-ib-als.c} "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/"
-cp "$ROOT_DIR"/src/linux/apple-ibridge.h "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/linux/"
-cp "$ROOT_DIR"/src/Makefile "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/"
-cp "$ROOT_DIR"/src/dkms.conf "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/"
-
-# runtime automation
-cp "$ROOT_DIR"/scripts/bind-touchbar.sh "$PKGROOT/usr/libexec/${MOD_NAME}/"
-cp "$ROOT_DIR"/systemd/mbp-t1-touchbar-bind.service "$PKGROOT"/lib/systemd/system/
-cp "$ROOT_DIR"/udev/99-mbp-t1-touchbar.rules "$PKGROOT"/etc/udev/rules.d/
-cp "$ROOT_DIR"/modprobe.d/mbp-t1-touchbar.conf "$PKGROOT"/etc/modprobe.d/
-cp "$ROOT_DIR"/modules-load.d/mbp-t1-touchbar.conf "$PKGROOT"/etc/modules-load.d/
-
-# debian control files
-cp "$ROOT_DIR"/debian/control "$PKGROOT"/DEBIAN/control
-cp "$ROOT_DIR"/debian/postinst "$PKGROOT"/DEBIAN/postinst
-cp "$ROOT_DIR"/debian/prerm "$PKGROOT"/DEBIAN/prerm
-cp "$ROOT_DIR"/debian/postrm "$PKGROOT"/DEBIAN/postrm
-cp "$ROOT_DIR"/debian/conffiles "$PKGROOT"/DEBIAN/conffiles
-sed -i "s/^Version: .*/Version: ${VERSION}/" "$PKGROOT"/DEBIAN/control
-
-cp "$ROOT_DIR"/README.md "$PKGROOT/usr/share/doc/${MOD_NAME}-dkms/README.md" 2>/dev/null || true
-cp "$ROOT_DIR"/LICENSE "$PKGROOT/usr/share/doc/${MOD_NAME}-dkms/copyright" 2>/dev/null || true
-
-cp "$ROOT_DIR"/docs/CHANGELOG.md "$PKGROOT/usr/share/doc/${MOD_NAME}-dkms/CHANGELOG.md"
-
-echo "==> Setting permissions"
-chmod 0755 "$PKGROOT"/DEBIAN/postinst "$PKGROOT"/DEBIAN/prerm "$PKGROOT"/DEBIAN/postrm
-chmod 0755 "$PKGROOT/usr/libexec/${MOD_NAME}/bind-touchbar.sh"
-chmod 0644 "$PKGROOT"/DEBIAN/control "$PKGROOT"/DEBIAN/conffiles
-chmod 0644 "$PKGROOT"/lib/systemd/system/mbp-t1-touchbar-bind.service
-chmod 0644 "$PKGROOT"/etc/udev/rules.d/99-mbp-t1-touchbar.rules
-chmod 0644 "$PKGROOT"/etc/modprobe.d/mbp-t1-touchbar.conf
-chmod 0644 "$PKGROOT"/etc/modules-load.d/mbp-t1-touchbar.conf
-chmod 0644 "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}"/*.c \
-           "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/linux"/*.h \
-           "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/Makefile" \
-           "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/dkms.conf"
-find "$PKGROOT" -type d -exec chmod 0755 {} \;
-
-echo "==> Syntax-checking shell scripts"
-bash -n "$PKGROOT"/DEBIAN/postinst
-bash -n "$PKGROOT"/DEBIAN/prerm
-bash -n "$PKGROOT"/DEBIAN/postrm
-bash -n "$PKGROOT/usr/libexec/${MOD_NAME}/bind-touchbar.sh"
-
-OUT="$ROOT_DIR/${MOD_NAME}-dkms_${VERSION}_all.deb"
-echo "==> Building $OUT"
-dpkg-deb --root-owner-group --build "$PKGROOT" "$OUT"
-
-echo "==> Done:"
-dpkg-deb -I "$OUT"
+# DEB
+deb=$work/deb
+src=$deb/usr/src/$modname-$modver
+install -d "$deb/DEBIAN" "$src/linux" "$deb/etc/modprobe.d" "$deb/etc/modules-load.d" \
+  "$deb/etc/udev/rules.d" "$deb/lib/systemd/system" "$deb/usr/libexec/$modname" \
+  "$deb/usr/share/doc/$modname-dkms"
+install -m 644 "$here"/src/{apple-ibridge.c,apple-ib-tb.c,apple-ib-als.c,Makefile,dkms.conf} "$src/"
+install -m 644 "$here/src/linux/apple-ibridge.h" "$src/linux/"
+install -m 755 "$here/scripts/bind-touchbar.sh" "$deb/usr/libexec/$modname/"
+install -m 644 "$here/systemd/$modname-bind.service" "$deb/lib/systemd/system/"
+install -m 644 "$here/udev/99-$modname.rules" "$deb/etc/udev/rules.d/"
+install -m 644 "$here/modprobe.d/$modname.conf" "$deb/etc/modprobe.d/"
+install -m 644 "$here/modules-load.d/$modname.conf" "$deb/etc/modules-load.d/"
+install -m 644 "$here/README.md" "$here/CHANGELOG.md" "$deb/usr/share/doc/$modname-dkms/"
+install -m 644 "$here/LICENSE" "$deb/usr/share/doc/$modname-dkms/copyright"
+install -m 644 "$here/debian/control" "$here/debian/conffiles" "$deb/DEBIAN/"
+install -m 755 "$here"/debian/{postinst,prerm,postrm} "$deb/DEBIAN/"
+sed -i "s/^Version: .*/Version: $version-$release/" "$deb/DEBIAN/control"
+dpkg-deb --root-owner-group -Zxz --build "$deb" "$out/$modname-dkms_$version-${release}_all.deb" >/dev/null

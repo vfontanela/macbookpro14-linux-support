@@ -1,122 +1,35 @@
-# mbp-t1-touchbar-dkms
+# Touch Bar, older driver (MacBookPro14,2)
 
-DKMS package that activates the Touch Bar and ambient light sensor on Intel
-MacBook Pro models with the **T1** co-processor.
+Package: `mbp-t1-touchbar-dkms`. Turns on the Touch Bar (function keys, media
+keys) and the ambient light sensor through the T1 chip, without Touch ID.
 
-MacBookPro14,1 has a physical function-key row and no Touch Bar, so this package is not applicable to that model. MacBookPro14,2 is the supported 13-inch 2017 Touch Bar model.
+> For Touch ID use [touchid/](../touchid/) instead. It drives the Touch Bar too.
+> The two packages conflict: the T1 offers either this mode or the Secure
+> Enclave, never both.
 
-> **Want Touch ID?** This driver keeps the T1 in a USB configuration without
-> the Secure Enclave, so Touch ID cannot work with it. Use
-> [../touchid/](../touchid/README.md) (T1Bridge) instead: it drives the Touch Bar
-> as well and replaces this package. Do not install both.
+It builds three modules with DKMS, from
+[parport0/mbp-t1-touchbar-driver](https://github.com/parport0/mbp-t1-touchbar-driver)
+(originally by Ronald Tschalär): `apple-ibridge` (the T1 USB hub),
+`apple-ib-tb` (Touch Bar) and `apple-ib-als` (light sensor). A small service,
+`mbp-t1-touchbar-bind`, rebinds the T1's HID interfaces when another driver
+(`hid-sensor-hub`) grabs them first. It runs at boot and when the device
+reappears.
 
-Validated on:
+Works on T1 Macs: MacBookPro13,2, 13,3, 14,2 and 14,3. Not on T2 Macs.
 
-| Model | Distribution | Kernel | Result |
-|---|---|---|---|
-| MacBookPro14,2 | Fedora 44 | 7.1.10 | Touch Bar working through DKMS |
-| MacBookPro14,3 | Ubuntu-based | 7.0 | Working |
-
-MacBookPro13,2 / 13,3 / 14,2 / 14,3 share the same T1 iBridge and should use
-this driver. This is for T1 Macs, not T2 Macs.
-
-## Fedora 44
-
-Install the build requirements for the running kernel:
+Check after the reboot:
 
 ```bash
-sudo dnf install git dkms gcc make kernel-devel-$(uname -r) kernel-headers
-```
-
-Clone this repository and build the RPM that registers the driver with DKMS:
-
-```bash
-git clone https://github.com/vfontanela/macbookpro14-linux-support.git
-cd macbookpro14-linux-support/touchbar
-sudo dnf install rpm-build
-bash build-rpm.sh
-sudo dnf install ./dist/mbp-t1-touchbar-dkms-*.noarch.rpm
-sudo reboot
-```
-
-If the RPM is already available from a release or a previous build, install it
-directly with `sudo dnf install ./mbp-t1-touchbar-dkms-*.noarch.rpm`.
-
-Verify after reboot:
-
-```bash
-dkms status
 lsmod | grep -E 'apple_ibridge|apple_ib_tb|apple_ib_als'
-journalctl -u mbp-t1-touchbar-bind.service --no-pager
+journalctl -b -u mbp-t1-touchbar-bind
 ```
 
-The package also installs the USB rebind service and udev rule required when
-the generic USB driver claims the iBridge before `apple-ibridge`.
+- Touch Bar dark: `sudo systemctl restart mbp-t1-touchbar-bind`, or reboot
+  once more.
+- `lsusb` shows `05ac:1281` (Recovery Mode) instead of `05ac:8600`: the T1
+  firmware is missing. Boot macOS once to restore it.
+- Settings (Fn mode, brightness, dimming) are in
+  `/etc/modprobe.d/mbp-t1-touchbar.conf`.
 
-## Ubuntu and Kubuntu
-
-```bash
-sudo apt install linux-headers-$(uname -r) dkms
-sudo dpkg -i mbp-t1-touchbar-dkms_<version>_all.deb
-sudo apt -f install   # only if dpkg reports missing dependencies
-sudo reboot
-```
-
-## Requirements and troubleshooting
-
-Confirm that the T1 firmware is present:
-
-```bash
-lsusb
-```
-
-- `05ac:8600 Apple, Inc. iBridge`: firmware is intact.
-- `05ac:1281 Apple Mobile Device [Recovery Mode]`: boot macOS once so it
-  can restore the T1 firmware, then return to Linux.
-
-If the modules are loaded but the Touch Bar remains blank, check the rebind
-service and reboot once after the initial installation.
-
-## Configuration
-
-Edit `/etc/modprobe.d/mbp-t1-touchbar.conf` to change Fn-key mode,
-brightness and idle/dim timeouts. Reload the module after changing it:
-
-```bash
-sudo modprobe -r apple-ib-tb
-sudo modprobe apple-ib-tb
-```
-
-## Components
-
-| Module | Purpose |
-|---|---|
-| `apple-ibridge` | Connects to Apple's T1 iBridge virtual USB hub |
-| `apple-ib-tb` | Renders the Touch Bar and handles touch input |
-| `apple-ib-als` | Exposes the ambient light sensor through IIO |
-
-The driver is out of tree and based on
-[parport0/mbp-t1-touchbar-driver](https://github.com/parport0/mbp-t1-touchbar-driver),
-originally written by Ronald Tschalär. See
-[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for additional diagnostics.
-
-## Touch Bar activation fix (1.0-3)
-
-The service and both packages use `/usr/libexec/mbp-t1-touchbar/bind-touchbar.sh`.
-On newer kernels, hid-sensor-hub can claim the physical display HID under the
-iBridge USB :1.3 interface and its virtual 1D6B:0301 HID. The script discovers
-current IDs, reprobes USB, and binds those two layers to apple-ibridge-hid and
-apple-ib-touchbar. It does not globally blacklist hid-sensor-hub.
-
-Success requires idle_timeout, dim_timeout, and fnmode on a Touch Bar HID under
-that same iBridge (:1.2 or :1.3); the driver normally puts controls on the mode
-HID under :1.2. Recovery mode (05ac:1281) still reports that macOS must restore
-the firmware. The manual two-layer fix was validated on Fedora 44 / kernel
-7.2.8. Clean package installation, upgrade, reboot/resume, and Debian hardware
-testing remain to be performed.
-
-Retry activation with `sudo systemctl restart mbp-t1-touchbar-bind.service`.
-Build the DEB with `bash build.sh` (requires dpkg-deb) and the RPM with
-`bash build-rpm.sh` (requires rpmbuild). Both are DKMS source packages, with
-unchanged driver sources and DKMS module version 0.3; package version is 1.0-3.
-Run regression checks with `python3 tests/test_binding.py -v`.
+Build: `bash touchbar/build.sh OUTDIR`. Tests: `python3 touchbar/tests/test_binding.py`.
+License: GPL-2.0 (see `LICENSE`).
