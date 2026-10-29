@@ -9,7 +9,8 @@ Portuguese are in [docs/pt-BR](docs/pt-BR/).
 
 > **Experimental.** Tested end to end on one MacBookPro14,2 with Fedora 45
 > (kernel 7.2.11): Touch Bar, enrollment, `verify-match`, sudo with the
-> fingerprint, and sudo with the password when the sensor is not touched.
+> fingerprint, sudo with the password when the sensor is not touched, and the
+> upgrade from preview.1 to preview.2.
 > The Debian/Ubuntu packages build and install in clean containers but have
 > **not been run on hardware**. Lock screen/GDM, password fallback with the
 > service stopped, suspend/resume and other models are unverified.
@@ -47,10 +48,13 @@ sudo tar -C /boot/efi -czf ~/apple-efi-backup.tar.gz EFI/APPLE
 
 ## Install from a release
 
-Download your distribution's `*-packages.tar.gz` bundle from the release,
+Download your distribution's `t1bridge-0.1.12-<distribution>-packages.tar.gz`
+from the [latest release](https://github.com/vfontanela/macbookpro14-linux-support/releases/latest),
 extract it, and run the installer from the distribution folder:
 
 ```bash
+tar xf t1bridge-0.1.12-fedora-45-packages.tar.gz
+cd t1bridge-0.1.12-fedora-45/fedora-45
 # Fedora 45
 sudo ./install.sh
 # Debian 13 / Ubuntu 26.04
@@ -99,7 +103,7 @@ and after cancelling the prompt.
 ## Build
 
 ```bash
-bash touchid/build.sh /absolute/output/path                    # all targets
+bash build.sh touchid                                          # all three, as release archives
 bash touchid/build.sh /absolute/output/path fedora-45          # or debian-13, ubuntu-26.04
 SKIP_FPRINT=1 bash touchid/build.sh /abs/out debian-13         # only the t1bridge packages
 ```

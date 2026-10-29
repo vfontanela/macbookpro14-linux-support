@@ -1,72 +1,95 @@
-# macbookpro14-linux-support
+# MacBook Pro 13" (2017) on Linux
 
-Linux support documentation and packages for the 2017 13-inch **MacBookPro14,x** family: MacBookPro14,1 (function keys) and MacBookPro14,2 (Touch Bar).
+One package per feature for the 2017 13-inch MacBook Pro on Fedora, Debian
+and Ubuntu: download the file for your model and distribution, install it,
+reboot.
 
-## Support matrix
+## 1. Which model do you have?
 
-| Component | MacBookPro14,1 (A1708, no Touch Bar) | MacBookPro14,2 (A1706, Touch Bar) | Documentation |
-|---|---|---|---|
-| Internal audio | Cirrus CS8409 with `snd_hda_macbookpro` DKMS | Cirrus CS8409 with `snd_hda_macbookpro` DKMS | [audio/README.md](audio/README.md) |
-| Wi-Fi | BCM4350 `[14e4:43a3]`; `brcmfmac-bcm4350-dfs/1.0` DKMS for DFS UNII-2e | BCM43602 `[14e4:43ba]`; complete calibrated board NVRAM | [wifi/README.md](wifi/README.md) |
-| Touch Bar / ambient light sensor | Not present; standard function-key row | T1 iBridge with `mbp-t1-touchbar` DKMS, **or** T1Bridge (below) | [touchbar/README.md](touchbar/README.md) |
-| Touch ID fingerprint reader | Not present | T1Bridge: Touch ID **and** Touch Bar; replaces `mbp-t1-touchbar` (experimental) | [touchid/README.md](touchid/README.md) |
-| Camera / FaceTime HD | PCIe `14e4:1570`: separate facetimehd DKMS package; user-confirmed working camera | USB iBridge / `uvcvideo` observed on the development Mac; no PCIe package needed | [camera/README.md](camera/README.md) |
+```bash
+cat /sys/class/dmi/id/product_name
+```
 
-## Tested configurations
+- **MacBookPro14,1** (A1708): function keys, no Touch Bar.
+- **MacBookPro14,2** (A1706): Touch Bar and Touch ID.
 
-| Model | Distribution / kernel | Validated result |
-|---|---|---|
-| MacBookPro14,1 | Fedora 44, kernel 7.1.12 | CS8409 audio; BCM4350 2.4/5 GHz, including DFS channel 116 with patched `brcmfmac` |
-| MacBookPro14,1 | Fedora 44, kernel 7.2.5 | BCM4350 Wi-Fi requires `pcie_aspm=off` on the kernel command line (PCIe ASPM probe regression, unrelated to the DFS DKMS package); see [wifi/BCM4350-PCIe-ASPM-kernel7.2.5.md](wifi/BCM4350-PCIe-ASPM-kernel7.2.5.md) |
-| MacBookPro14,2 | Fedora 44, kernel 7.1.10 | CS8409 audio; BCM43602 2.4/5 GHz; T1 Touch Bar and ambient light sensor |
-| MacBookPro14,2 | Fedora 45, kernel 7.2.11 | T1Bridge: Touch Bar, Touch ID enrollment/verification, sudo with fingerprint and password |
-| MacBookPro14,2 | Ubuntu / Kubuntu | Existing Debian package workflows for audio and Touch Bar; board-specific BCM43602 NVRAM |
+## 2. Download what you need
 
-## Fedora 44 highlights
+All files are in the [latest release](https://github.com/vfontanela/macbookpro14-linux-support/releases/latest).
 
-- Install matching `kernel-devel-$(uname -r)` and `kernel-headers` before building DKMS modules.
-- Both models use the same `snd_hda_macbookpro` audio solution.
-- MacBookPro14,1 has no Touch Bar and does not need a T1/iBridge package.
-- BCM4350 DFS support on MacBookPro14,1 requires the one-line country-code fallback patch documented in [wifi/BCM4350-DFS.md](wifi/BCM4350-DFS.md).
-- BCM4350 Wi-Fi on MacBookPro14,1 kernel 7.2.5 requires `pcie_aspm=off` on the kernel command line — a PCIe power-management regression that stops `brcmfmac` from probing the chip at all, unrelated to the DFS DKMS package. See [wifi/BCM4350-PCIe-ASPM-kernel7.2.5.md](wifi/BCM4350-PCIe-ASPM-kernel7.2.5.md).
-- BCM43602 5 GHz on MacBookPro14,2 requires the complete board NVRAM, not a minimal parameter file. Its `macaddr` must come from `ethtool -P` because the active interface address can be randomized.
+| Feature | 14,1 | 14,2 | Fedora | Debian / Ubuntu |
+|---|:-:|:-:|---|---|
+| [Speakers and microphone](audio/) | ✓ | ✓ | `mbp-cirrus-audio-dkms-2.0-1.noarch.rpm` | `mbp-cirrus-audio-dkms_2.0-1_all.deb` |
+| [Wi-Fi: 5 GHz DFS channels](wifi-bcm4350/) | ✓ | | `brcmfmac-bcm4350-dfs-dkms-2.0-1.noarch.rpm` | — |
+| [Wi-Fi: 2.4 and 5 GHz](wifi-bcm43602/) | | ✓ | `brcmfmac43602-mbp14-2-nvram-2.0-1.noarch.rpm` | `brcmfmac43602-mbp14-2-nvram_2.0-1_all.deb` |
+| [FaceTime camera](camera/) | ✓ | | `macbook-facetimehd-dkms-0.7.2.git20260929-1.fc45.noarch.rpm` | `macbook-facetimehd-dkms_0.7.2.git20260929-1_all.deb` |
+| [Touch Bar and Touch ID](touchid/) | | ✓ | `t1bridge-0.1.12-fedora-45-packages.tar.gz` | `t1bridge-0.1.12-debian-13-packages.tar.gz`, `t1bridge-0.1.12-ubuntu-26.04-packages.tar.gz` |
+| [Touch Bar only (older driver)](touchbar/) | | ✓ | `mbp-t1-touchbar-dkms-1.0-4.noarch.rpm` | `mbp-t1-touchbar-dkms_1.0-4_all.deb` |
 
-Ubuntu and Kubuntu instructions already present in each component guide have been retained.
+On the 14,2 the camera already works without a package. Pick **one** Touch Bar
+option: Touch ID needs the T1 chip in a mode the older driver cannot use.
 
-## Camera installation by model
+## 3. Install
 
-The new `camera/` component is independent of Touch Bar, audio and Wi-Fi.
-Install it only when `lspci -nn -d 14e4:1570` finds the supported PCIe camera;
-USB/iBridge cameras use `uvcvideo`. Both package families check hardware before
-installing/configuring DKMS. Driver/tool GPL licenses and pinned upstream
-revisions are recorded in `camera/UPSTREAM.md`; proprietary firmware is obtained
-and extracted only on the user's machine, never redistributed in packages.
+Fedora:
 
-Build the independent Touch Bar and camera RPM/DEB packages with
-`bash tools/build-support.sh /absolute/output/path` (requires dpkg-deb,
-rpmbuild, Python, make and tar). There is deliberately no metapackage requiring
-both components on models that do not have both devices. The existing Touch Bar
-1.0-3 sources/service/binding fix is preserved unchanged.
+```bash
+sudo dnf install kernel-devel-$(uname -r)    # needed by every DKMS package
+sudo dnf install ./mbp-cirrus-audio-dkms-2.0-1.noarch.rpm
+sudo reboot
+```
 
-**MacBookPro14,1 (A1708):** install the camera RPM/DEB from the latest release,
-then run `sudo macbook-facetimehd setup`. It keeps working firmware, extracts it
-locally only if absent, and activates only the supported PCIe camera. The
-checkout installer also completes setup automatically; see [camera/README.md](camera/README.md).
+Debian / Ubuntu:
 
-**MacBookPro14,2 (A1706):** keep the USB iBridge camera's `uvcvideo` support;
-install the separate Touch Bar package if needed. Do not install facetimehd on
-this model's USB camera. Both package families reject absent PCIe hardware.
+```bash
+sudo apt install linux-headers-$(uname -r)
+sudo apt install ./mbp-cirrus-audio-dkms_2.0-1_all.deb
+sudo reboot
+```
 
-**Touch ID (MacBookPro14,2 and other T1 Touch Bar models):** use
-[touchid/](touchid/README.md) *instead of* the Touch Bar package. The T1 can
-expose either the legacy Touch Bar mode or the Secure Enclave, not both, so
-T1Bridge drives the Touch Bar itself and the two cannot be installed together.
-It is experimental: Fedora 45 was tested on hardware, while the Debian 13 and
-Ubuntu 26.04 packages were only tested in containers. Back up
-`EFI/APPLE/EMBEDDEDOS/FDRData` first. Build with
-`bash touchid/build.sh /absolute/output/path` (requires podman or docker).
+Do the same with each file you downloaded. Two features need one more step:
 
-The user confirmed FaceTime HD had already worked on the 14,1 and accepted
-release without repeating all hardware tests. This packaged snapshot passed
-clean builds; exact-snapshot streaming, Debian lifecycle and Secure Boot were
-not independently validated. Optional diagnostics remain documented.
+- **Camera:** run `sudo macbook-facetimehd setup` once. It extracts the camera
+  firmware from Apple's servers on your machine.
+- **Touch Bar and Touch ID:** extract the archive and run `sudo ./install.sh`
+  from the distribution folder. After the reboot, register a fingerprint; see
+  [touchid/](touchid/).
+
+Remove a package with `sudo dnf remove <name>` or `sudo apt remove <name>`.
+Packages that compile a kernel module (DKMS) rebuild it automatically after
+kernel updates.
+
+## What was tested
+
+| Package | Tested on |
+|---|---|
+| Audio | MacBookPro14,1 and 14,2 (Fedora 44, 45); builds on Ubuntu 26.04. Needs Linux 6.17 or newer, so Debian 13 needs a backports kernel. |
+| Wi-Fi 14,1 (DFS) | MacBookPro14,1, Fedora 44, kernel 7.2.4 (channel 116). Source builds on Linux 7.2 only. |
+| Wi-Fi 14,2 | MacBookPro14,2, Fedora 44 and 45, both bands. |
+| Camera 14,1 | MacBookPro14,1, Fedora 44. |
+| Touch Bar and Touch ID | MacBookPro14,2, Fedora 45: Touch Bar, enrollment, sudo with the fingerprint. Debian 13 and Ubuntu 26.04 packages only tested in containers. |
+| Touch Bar (older driver) | MacBookPro14,2, Fedora 44; builds on Debian 13 and Ubuntu 26.04. |
+
+Every package was also installed, built and removed in Fedora 45, Debian 13
+and Ubuntu 26.04 containers. Packages are not signed; check downloads against
+`SHA256SUMS` in the release. With Secure Boot, DKMS modules must be signed with
+a key you enroll (`mokutil`).
+
+## Build the packages yourself
+
+```bash
+bash build.sh                  # everything, into dist/
+bash build.sh audio touchbar   # only some: audio wifi-bcm4350 wifi-bcm43602 touchbar camera touchid
+```
+
+Needs podman or docker; all builds run in containers.
+
+## Credits
+
+The drivers come from [davidjo/snd_hda_macbookpro](https://github.com/davidjo/snd_hda_macbookpro)
+(audio), the Linux `brcmfmac` driver (Wi-Fi),
+[patjak/facetimehd](https://github.com/patjak/facetimehd) (camera),
+[standardagents/t1bridge](https://github.com/standardagents/t1bridge) (Touch ID)
+and [parport0/mbp-t1-touchbar-driver](https://github.com/parport0/mbp-t1-touchbar-driver)
+(older Touch Bar driver). This repository packages them for these two models.
+Each folder lists its exact upstream version and license.

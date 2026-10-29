@@ -1,49 +1,35 @@
 #!/bin/bash
-# build.sh - assembles the .deb package from this repo's source tree.
+# Build mbp-cirrus-audio-dkms (.rpm and .deb) from the pinned upstream driver.
+#   bash audio/build.sh OUTDIR        needs git, rpmbuild, dpkg-deb
 set -euo pipefail
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$here/../lib/package.sh"
 
-VERSION="${1:-1.0-1}"
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="$(mktemp -d)"
-PKGROOT="$BUILD_DIR/pkgroot"
-MOD_NAME="snd_hda_macbookpro"
-MOD_VERSION="1.0"   # must match PACKAGE_VERSION in src/dkms.conf
+upstream=https://github.com/davidjo/snd_hda_macbookpro.git
+commit=6c324f6c9262faa853fdd74d798c5686937a9d0f   # 2026-08-10
 
-trap 'rm -rf "$BUILD_DIR"' EXIT
+NAME=mbp-cirrus-audio-dkms VERSION=2.0 RELEASE=1 LICENSE=GPL-2.0-only
+SUMMARY="Internal speakers and microphone (Cirrus CS8409) for 2016-2017 MacBook Pro"
+DESCRIPTION="DKMS package of davidjo/snd_hda_macbookpro (commit ${commit:0:7}),
+which patches the kernel's CS8409 codec driver for the Apple amplifiers.
+Each build downloads the sound sources of the running kernel (kernel.org,
+or the linux-source package on Ubuntu). Needs Linux 6.17 or newer."
+RPM_REQUIRES="dkms, gcc, make, patch, wget, xz, tar, kernel-devel"
+DEB_DEPENDS="dkms, build-essential, patch, wget, xz-utils"
+DEB_RECOMMENDS="linux-source"   # Ubuntu builds from it
+SETUP=/usr/libexec/$NAME/setup
 
-echo "==> Assembling package tree in $PKGROOT"
-mkdir -p "$PKGROOT"/DEBIAN
-mkdir -p "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}"
-mkdir -p "$PKGROOT/usr/share/doc/mbp-cirrus-audio-dkms"
-
-cp -a "$ROOT_DIR"/src/. "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/"
-
-cp "$ROOT_DIR"/debian/control "$PKGROOT"/DEBIAN/control
-cp "$ROOT_DIR"/debian/postinst "$PKGROOT"/DEBIAN/postinst
-cp "$ROOT_DIR"/debian/prerm "$PKGROOT"/DEBIAN/prerm
-cp "$ROOT_DIR"/debian/postrm "$PKGROOT"/DEBIAN/postrm
-sed -i "s/^Version: .*/Version: ${VERSION}/" "$PKGROOT"/DEBIAN/control
-
-cp "$ROOT_DIR"/README.md "$PKGROOT"/usr/share/doc/mbp-cirrus-audio-dkms/ 2>/dev/null || true
-cp -r "$ROOT_DIR"/docs "$PKGROOT"/usr/share/doc/mbp-cirrus-audio-dkms/ 2>/dev/null || true
-
-echo "==> Setting permissions"
-chmod 0755 "$PKGROOT"/DEBIAN/postinst "$PKGROOT"/DEBIAN/prerm "$PKGROOT"/DEBIAN/postrm
-chmod 0755 "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}"/install.cirrus.driver.sh \
-           "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}"/install.cirrus.driver.pre617.sh \
-           "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}"/dkms.sh
-find "$PKGROOT" -type d -exec chmod 0755 {} \;
-
-echo "==> Syntax-checking shell scripts"
-bash -n "$PKGROOT"/DEBIAN/postinst
-bash -n "$PKGROOT"/DEBIAN/prerm
-bash -n "$PKGROOT"/DEBIAN/postrm
-bash -n "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/install.cirrus.driver.sh"
-bash -n "$PKGROOT/usr/src/${MOD_NAME}-${MOD_VERSION}/dkms.sh"
-
-OUT="$ROOT_DIR/mbp-cirrus-audio-dkms_${VERSION}_all.deb"
-echo "==> Building $OUT"
-dpkg-deb --root-owner-group --build "$PKGROOT" "$OUT"
-
-echo "==> Done:"
-dpkg-deb -I "$OUT"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+git clone -q "$upstream" "$work/upstream"
+ROOT=$work/root
+src=$ROOT/usr/src/snd_hda_macbookpro-$VERSION
+mkdir -p "$src" "$ROOT/usr/libexec/$NAME"
+git -C "$work/upstream" archive "$commit" | tar -x -C "$src"
+rm -rf "$src/tests" "$src/.gitignore"
+sed -i "s/^PACKAGE_VERSION=.*/PACKAGE_VERSION=\"$VERSION\"/" "$src/dkms.conf"
+sed "s/@VERSION@/$VERSION/" "$here/setup.sh" > "$ROOT$SETUP"
+chmod 755 "$ROOT$SETUP"
+RPM_FILES="/usr/src/snd_hda_macbookpro-$VERSION
+/usr/libexec/$NAME"
+make_packages "$1"

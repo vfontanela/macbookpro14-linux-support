@@ -27,7 +27,9 @@ Addresses the packaging findings of the preview.1 review. Only the
 
 Tested in containers: preview.1 to preview.2 upgrade (Fedora `-3`→`-4`,
 Debian `-1`→`-2`), administrator-file preservation, removal, the documented
-Debian restore, and failure reporting. Not repeated on hardware.
+Debian restore, and failure reporting. On hardware (MacBookPro14,2, Fedora 45):
+upgrade from `-3`, mask kept, iBridge in configuration 2 after the reboot,
+Touch Bar and sudo with the fingerprint working.
 
 ## preview.1 — Fedora `0.1.12-3`, Debian/Ubuntu `0.1.12-1`
 

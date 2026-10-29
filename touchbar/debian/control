@@ -4,8 +4,9 @@ Section: kernel
 Priority: optional
 Architecture: all
 Depends: dkms (>= 2.2.0.3), kmod, usbutils, systemd, udev
+Conflicts: t1bridge-dkms
 Recommends: linux-headers-generic | linux-headers-amd64
-Maintainer: Vinicius Fontanela <[email protected]>
+Maintainer: Vinicius Fontanela <vfontanela@gmail.com>
 Description: T1 iBridge / Touch Bar driver (DKMS) for MacBook Pro 2016/2017
  Out-of-tree DKMS package providing the apple-ibridge, apple-ib-tb and
  apple-ib-als kernel modules needed to activate the Touch Bar, ambient
