@@ -8,7 +8,7 @@
 
 Name:           mbp-t1-touchbar-dkms
 Version:        1.0
-Release:        3%{?dist}
+Release:        4%{?dist}
 Summary:        T1 iBridge / Touch Bar driver (DKMS) for MacBook Pro 2016/2017
 
 License:        GPLv2
@@ -22,6 +22,7 @@ Requires:       usbutils
 Requires:       systemd
 Requires:       systemd-udev
 Requires(post): dkms
+Conflicts:      t1bridge-dkms
 Requires(preun): dkms
 
 %description
@@ -133,7 +134,7 @@ fi
 
 %files
 %license LICENSE
-%doc README.md docs/T1_VS_T2.md docs/TROUBLESHOOTING.md docs/CHANGELOG.md
+%doc README.md CHANGELOG.md
 %{_usrsrc}/%{modname}-%{modver}/
 %{_libexecdir}/%{modname}/bind-touchbar.sh
 %{_unitdir}/mbp-t1-touchbar-bind.service
@@ -142,15 +143,18 @@ fi
 %config(noreplace) %{_sysconfdir}/modules-load.d/mbp-t1-touchbar.conf
 
 %changelog
-* Thu Oct 01 2026 Vinicius Fontanela - 1.0-3
+* Thu Oct 29 2026 Vinicius Fontanela <vfontanela@gmail.com> - 1.0-4
+- Conflict with t1bridge-dkms (Touch ID); packaging cleanup, no driver change
+
+* Thu Oct 01 2026 Vinicius Fontanela <vfontanela@gmail.com> - 1.0-3
 - Correct systemd script path and both display HID bindings on newer kernels
 - Scope activation verification to the detected iBridge Touch Bar
 
-* Mon Jul 13 2026 Vinicius Fontanela <[email protected]> - 1.0-2
+* Mon Jul 13 2026 Vinicius Fontanela <vfontanela@gmail.com> - 1.0-2
 - Fixed dkms.conf: removed custom MAKE[0] override that broke the
   module Makefile's kbuild-mode branch (make: No targets. Stop.)
 - Removed deprecated REMAKE_INITRD directive
 - Confirmed working on kernel 7.0.0-27
 
-* Sun Jul 12 2026 Vinicius Fontanela <[email protected]> - 1.0-1
+* Sun Jul 12 2026 Vinicius Fontanela <vfontanela@gmail.com> - 1.0-1
 - Initial RPM packaging, mirroring the Debian package
