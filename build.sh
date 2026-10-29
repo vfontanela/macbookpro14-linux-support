@@ -46,6 +46,6 @@ if [[ " ${components[*]} " == *" touchid "* ]]; then
   rm -rf "$out/touchid"
 fi
 
-(cd "$out" && sha256sum -- *.rpm *.deb *.tar.gz 2>/dev/null > SHA256SUMS)
+(cd "$out" && shopt -s nullglob && sha256sum -- *.rpm *.deb *.tar.gz > SHA256SUMS)
 echo "Packages in $out:"
 ls -1 "$out"
