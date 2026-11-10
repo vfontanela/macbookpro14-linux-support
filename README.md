@@ -20,7 +20,7 @@ All files are in the [latest release](https://github.com/vfontanela/macbookpro14
 | Feature | 14,1 | 14,2 | Fedora | Debian / Ubuntu |
 |---|:-:|:-:|---|---|
 | [Speakers and microphone](audio/) | ✓ | ✓ | `mbp-cirrus-audio-dkms-2.0-1.noarch.rpm` | `mbp-cirrus-audio-dkms_2.0-1_all.deb` |
-| [Wi-Fi: 5 GHz DFS channels](wifi-bcm4350/) | ✓ | | `brcmfmac-bcm4350-dfs-dkms-2.0-1.noarch.rpm` | — |
+| [Wi-Fi: 5 GHz DFS channels](wifi-bcm4350/) | ✓ | | `brcmfmac-bcm4350-dfs-dkms-2.0-2.noarch.rpm` | — |
 | [Wi-Fi: 2.4 and 5 GHz](wifi-bcm43602/) | | ✓ | `brcmfmac43602-mbp14-2-nvram-2.0-1.noarch.rpm` | `brcmfmac43602-mbp14-2-nvram_2.0-1_all.deb` |
 | [FaceTime camera](camera/) | ✓ | | `macbook-facetimehd-dkms-0.7.2.git20260929-1.fc45.noarch.rpm` | `macbook-facetimehd-dkms_0.7.2.git20260929-1_all.deb` |
 | [Touch Bar and Touch ID](touchid/) | | ✓ | `t1bridge-0.1.12-fedora-45-packages.tar.gz` | `t1bridge-0.1.12-debian-13-packages.tar.gz`, `t1bridge-0.1.12-ubuntu-26.04-packages.tar.gz` |
@@ -64,7 +64,7 @@ kernel updates.
 | Package | Tested on |
 |---|---|
 | Audio | MacBookPro14,1 and 14,2 (Fedora 44, 45); builds on Ubuntu 26.04. Needs Linux 6.17 or newer, so Debian 13 needs a backports kernel. |
-| Wi-Fi 14,1 (DFS) | MacBookPro14,1, Fedora 44, kernel 7.2.4 (channel 116). Source builds on Linux 7.2 only. |
+| Wi-Fi 14,1 (DFS) | MacBookPro14,1, Fedora 44, kernel 7.2.4 (channel 116) with release 2.0-1. Release 2.0-2: `dkms build`/`install` verified for kernel 7.3.3 on the same machine and in a clean Fedora 45 container; not yet confirmed with a post-reboot Wi-Fi association on 7.3.3. Source builds on Linux 7.3 only (2.0-1 remains for Linux 7.2). |
 | Wi-Fi 14,2 | MacBookPro14,2, Fedora 44 and 45, both bands. |
 | Camera 14,1 | MacBookPro14,1, Fedora 44. |
 | Touch Bar and Touch ID | MacBookPro14,2, Fedora 45: Touch Bar, enrollment, sudo with the fingerprint. Debian 13 and Ubuntu 26.04 packages only tested in containers. |

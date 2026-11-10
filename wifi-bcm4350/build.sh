@@ -5,14 +5,17 @@ set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$here/../lib/package.sh"
 
-NAME=brcmfmac-bcm4350-dfs-dkms VERSION=2.0 RELEASE=1 LICENSE=ISC
+NAME=brcmfmac-bcm4350-dfs-dkms VERSION=2.0 RELEASE=2 LICENSE=ISC
 SUMMARY="5 GHz DFS channels for the BCM4350 Wi-Fi of the MacBookPro14,1"
 DESCRIPTION="DKMS package of the kernel's brcmfmac driver with BCM4350 added to
 the ISO 3166 country-code fallback, so the firmware receives the regulatory
 country and DFS channels 100-144 become usable. Built only when a BCM4350
-(14e4:43a3) is present. The sources build on Linux 7.2."
+(14e4:43a3) is present. The sources build on Linux 7.3 (resynced from
+upstream v7.3.3 after the 7.3 cfg80211_ops cookie-by-value change broke the
+prior Linux-7.2 snapshot); they no longer build on Linux 7.2 — stay on
+release 2.0-1 if your kernel is still 7.2.x."
 RPM_REQUIRES="dkms, gcc, make, kernel-devel"
-DEB_DEPENDS=none   # the sources only build on Linux 7.2 (Fedora)
+DEB_DEPENDS=none   # the sources only build on Linux 7.3 (Fedora)
 SETUP=/usr/libexec/$NAME/setup
 
 work=$(mktemp -d)
