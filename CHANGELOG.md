@@ -33,9 +33,11 @@ Verified: `dkms build`/`dkms install -k 7.3.3-300.fc45.x86_64` on the
 maintainer's own MacBookPro14,1 (exit 0, module signed with the host's DKMS
 MOK key); a from-scratch `dnf install` of the built RPM plus a forced
 `dkms build` for the same kernel release in a clean Fedora 45 container
-(`dkms status` → `built`). Not yet verified: an actual post-reboot Wi-Fi
-association on 7.3.3 — the maintainer's machine had not rebooted into it at
-publication time.
+(`dkms status` → `built`). **Confirmed live (2026-11-10):** after rebooting
+into `7.3.3-300.fc45.x86_64`, `iw dev wlp2s0 link` shows an active connection
+on the DFS channel (5580 MHz / channel 116, -52 dBm, 400 Mbit/s rx), with
+`modinfo brcmfmac` resolving to the packaged module under
+`/lib/modules/7.3.3-300.fc45.x86_64/extra/`.
 
 ## v2.0.0 — 2026-10-29
 
