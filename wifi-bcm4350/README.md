@@ -15,11 +15,20 @@ after `iw reg set`. The package builds `brcmfmac` with one added line:
      case BRCM_CC_4356_CHIP_ID:
 ```
 
-`src/` is a copy of the kernel's `brcmfmac` driver (ISC license), with that
-line and the 7.2 `remain_on_channel` signature. The upstream base commit was
-not recorded. The package only builds on a machine that has a BCM4350, and
-only on Linux 7.2. When the build fails, the kernel's own driver stays in
-use: Wi-Fi works, just without DFS.
+`src/` is a copy of the kernel's `brcmfmac` driver (ISC license, upstream tag
+`v7.3.3`), with that one line added. The package only builds on a machine
+that has a BCM4350, and only on Linux 7.3 — Linux 7.3 changed
+`cfg80211_ops.mgmt_tx`/`.remain_on_channel` (the `cookie` argument became an
+input value instead of an output pointer), which is why a 7.2-era source no
+longer compiles; see `CHANGELOG.md`. Release 2.0-1 stays on a Linux-7.2-based
+source for anyone still on that kernel. When the build fails, the kernel's
+own driver stays in use: Wi-Fi works, just without DFS.
+
+The BCM4350 case in `brmcf_use_iso3166_ccode_fallback()` was itself upstreamed
+by the maintainer: Linux commit `c56821fb3eeec2a8fbf30086b85fdb836cf4e781`,
+merged 2026-10-05. No `Cc: stable` tag, so it should land with a future
+feature release rather than a 7.3.x point release; once your kernel has it,
+this package is no longer needed.
 
 Check after the reboot:
 
